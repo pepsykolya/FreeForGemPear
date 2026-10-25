@@ -1,5 +1,13 @@
 # FreeForGemPear
 
+> **New: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — the multi-coin line of this miner (Pearl, CMFD, **NOID**)
+> with per-card auto-undervolt continues there, from 1.7.0 ([releases](https://github.com/pepsykolya/FreeForGem/releases);
+> HiveOS custom miner `freeforgem`, saved `--auto-uv` results are imported). FreeForGemPear stays here as the Pearl miner.
+>
+> **Новое: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — мульти-монетная линейка этого майнера (Pearl, CMFD,
+> **NOID**) с автоандервольтом каждой карты продолжается там, начиная с 1.7.0 ([релизы](https://github.com/pepsykolya/FreeForGem/releases);
+> кастомный майнер HiveOS `freeforgem`, сохранённые результаты `--auto-uv` подхватываются). FreeForGemPear остаётся здесь как майнер Pearl.
+
 GPU miner for **Pearl (PRL)** — pearlhash proof-of-useful-work — with a **1% developer fee**. Since 1.6.0 it also mines
 **Common Foundry (CMFD)** and runs on **AMD Radeon** cards (Windows).
 
