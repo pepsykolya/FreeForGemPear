@@ -1,5 +1,10 @@
-> **New: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — the multi-coin successor of FreeForGemPear: Pearl, CMFD and NOID in one miner.
-> FreeForGemPear continues with bug fixes.
+> **New: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — the multi-coin line of this miner (Pearl, CMFD, **NOID**)
+> with per-card auto-undervolt continues there, from 1.7.0 ([releases](https://github.com/pepsykolya/FreeForGem/releases);
+> HiveOS custom miner `freeforgem`, saved `--auto-uv` results are imported). FreeForGemPear stays here as the Pearl miner and continues with bug fixes.
+>
+> **Новое: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — мульти-монетная линейка этого майнера (Pearl, CMFD,
+> **NOID**) с автоандервольтом каждой карты продолжается там, начиная с 1.7.0 ([релизы](https://github.com/pepsykolya/FreeForGem/releases);
+> кастомный майнер HiveOS `freeforgem`, сохранённые результаты `--auto-uv` подхватываются). FreeForGemPear остаётся здесь как майнер Pearl и продолжает выходить с исправлениями.
 
 # FreeForGemPear
 
