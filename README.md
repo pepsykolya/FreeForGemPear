@@ -1,10 +1,7 @@
-> **New: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — the multi-coin line of this miner (Pearl, CMFD, **NOID**)
-> with per-card auto-undervolt continues there, from 1.7.0 ([releases](https://github.com/pepsykolya/FreeForGem/releases);
-> HiveOS custom miner `freeforgem`, saved `--auto-uv` results are imported). FreeForGemPear stays here as the Pearl miner and continues with bug fixes.
+> [!IMPORTANT]
+> ➡️ **FreeForGem 1.7.6 is out — the successor of FreeForGemPear** ([releases](https://github.com/pepsykolya/FreeForGem/releases/latest)). The same Pearl mining and auto-undervolt, plus NOID and CMFD in one miner, 1% fee. Your FreeForGemPear `--auto-uv` results are imported on first start, no new tuning needed. HiveOS: new flight sheet, custom miner `freeforgem`, Installation URL `https://github.com/pepsykolya/FreeForGem/releases/download/v1.7.6/freeforgem-1.7.6.tar.gz`. Windows: the zip from the release. FreeForGemPear stays here as the Pearl-only miner with bug fixes.
 >
-> **Новое: [FreeForGem](https://github.com/pepsykolya/FreeForGem)** — мульти-монетная линейка этого майнера (Pearl, CMFD,
-> **NOID**) с автоандервольтом каждой карты продолжается там, начиная с 1.7.0 ([релизы](https://github.com/pepsykolya/FreeForGem/releases);
-> кастомный майнер HiveOS `freeforgem`, сохранённые результаты `--auto-uv` подхватываются). FreeForGemPear остаётся здесь как майнер Pearl и продолжает выходить с исправлениями.
+> ➡️ **Вышел FreeForGem 1.7.6 — преемник FreeForGemPear** ([релизы](https://github.com/pepsykolya/FreeForGem/releases/latest)). Тот же майнинг Pearl и автоандервольт, плюс NOID и CMFD в одном майнере, комиссия 1%. Результаты `--auto-uv` из FreeForGemPear подхватываются при первом запуске, заново подбирать не нужно. HiveOS: новый полётный лист, кастомный майнер `freeforgem`, Installation URL `https://github.com/pepsykolya/FreeForGem/releases/download/v1.7.6/freeforgem-1.7.6.tar.gz`. Windows: архив из релиза. FreeForGemPear остаётся здесь как майнер только для Pearl с исправлениями.
 
 # FreeForGemPear
 
