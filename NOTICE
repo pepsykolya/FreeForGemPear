@@ -1,8 +1,8 @@
 FreeForGemPear
-Copyright (c) 2026 pepsykolya. Licensed under the FreeForGemPear License 1.1 (see LICENSE).
+Copyright (c) 2026 pepsykolya. Licensed under the FreeForGemPear Binary License 1.0 (see LICENSE); versions up to and
+including 1.6.3 stay under the license they were published with.
 
-The GPU kernels, the CUDA library and the host program are original work. The GPU library is
-distributed in binary form only.
+The freeforgempear program, its GPU kernels and GPU libraries are original work, distributed in binary form only.
 
 Release binaries link the following third-party components, which remain under
 their own licenses:
@@ -29,15 +29,15 @@ their own licenses:
   base64, bincode, flate2, rand and their dependencies) -- each under its own
   license, typically MIT and/or Apache-2.0.
 
-* CMFD engine (folder cmfd/: cmfd-miner, cmfd-v4-replay, cmfd-launch, model preparation scripts) --
+* CMFD engine (folder cmfd/ of the packages: cmfd-miner, cmfd-v4-replay, cmfd-launch, model preparation scripts) --
   FreeForgeMiner, https://github.com/pepsykolya/freeforgeminer, MIT License,
   Copyright (c) 2026 FreeForgeMiner contributors; portions Copyright (c) 2026 CommonFoundry contributors
   (https://github.com/Common-Foundry-1/CommonFoundry). Shipped unchanged as separate programs; full license texts in
   cmfd/LICENSE-FreeForgeMiner and cmfd/LICENSE-CommonFoundry, third-party notices in cmfd/THIRD_PARTY_NOTICES.md.
-  The FreeForGemPear License does not apply to the cmfd/ folder.
+  The FreeForGemPear Binary License does not apply to the cmfd/ folder.
   cmfd/fixtures/: test vector (replay coefficients) from the Common Foundry v1.0.16 AMD HIP miner, MIT License,
   Copyright (c) 2026 Common Foundry AMD HIP contributors (cmfd/fixtures/LICENSE-CommonFoundry-AMD-HIP).
-  host/src/cmfd.rs: the cmfd1 address codec follows crates/cmfd-node/src/address.rs of Common Foundry v1.0.16 (MIT).
+  The cmfd1 address codec of the freeforgempear program follows crates/cmfd-node/src/address.rs of Common Foundry v1.0.16 (MIT).
 
 * NVIDIA CUDA runtime (cudart) -- statically linked into libpearlgpu.so / pearlgpu.dll
   and redistributed under the NVIDIA CUDA Toolkit End User License Agreement. The

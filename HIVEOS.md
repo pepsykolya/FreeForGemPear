@@ -40,7 +40,7 @@ The dashboard shows the hashrate per GPU and in total, temperatures, fans, and a
 
 ### Overclocking (RTX 3070)
 
-The kernel works from L2 cache and needs almost no VRAM bandwidth:
+Pearl does not need a high memory clock:
 
 | Setting | Value |
 |---|---|
@@ -72,7 +72,7 @@ own settings back when it stops. Same hashrate, fewer watts (RTX 3070 at 1560 MH
 - Stopping the miner restores your offset. If the miner was killed, the next start restores it first.
 - **Reset:** run `freeforgempear --uv-reset` once in the miner folder (or delete `/hive-config/freeforgempear/uv.json`).
   Other options (`--uv-offset N`, `--uv-max N`, `--uv-reval-hours H`, `--auto-uv-dry-run`) and a manual-tuning
-  procedure are in [MANUAL.md](MANUAL.md#12-undervolt---auto-uv-optional-new-in-140). Undervolting is at your own risk, like any overclocking.
+  procedure are in [MANUAL.md](MANUAL.md#12-undervolt----auto-uv-optional-new-in-140). Undervolting is at your own risk, like any overclocking.
 - **Mixed rig:** `--auto-uv` is enough — the limits are chosen per card (since 1.6.2): RTX 20xx / GTX 16xx up to +225,
   CMP 30HX/40HX up to +150 (CMP 50HX: +225), all others up to +495; `grep range` in the miner log shows each GPU's range. For manual
   control give one value per GPU in nvidia-smi order (GPU0, GPU1, ... as in the miner log; or in `--devices` order), no spaces:
@@ -103,7 +103,7 @@ an RTX 3070 gave 3.7 FW/s with *Mem lock* 810 and 21.8 FW/s (~237 W, power limit
 warns about a low memory clock in the log (once per GPU, since 1.6.1) but does not change your OC.
 CMFD runs on HiveOS images based on Ubuntu 20.04 and 22.04 alike (the engine in the package needs glibc 2.30+).
 `--auto-uv` in *Extra config* tunes a separate CMFD core offset per card on the CMFD load itself (every step checked
-bit-for-bit on the real model; first start ~15–20 min, then applied at once; owner's offset back on `miner stop`). Tune with the
+bit-for-bit; first start ~15–20 min, then applied at once; owner's offset back on `miner stop`). Tune with the
 OC profile you mine with: a changed power limit re-tunes, a changed core clock lock needs `--uv-reset` once. MANUAL.md, section 13.
 
 ## Русский
@@ -144,7 +144,7 @@ https://github.com/pepsykolya/FreeForGemPear/releases/download/v1.6.3/freeforgem
 
 ### Разгон (RTX 3070)
 
-Ядро работает из L2-кэша, видеопамять ему почти не нужна:
+Высокая частота памяти Pearl не нужна:
 
 | Параметр | Значение |
 |---|---|
@@ -176,7 +176,7 @@ https://github.com/pepsykolya/FreeForGemPear/releases/download/v1.6.3/freeforgem
 - При остановке майнера ваш offset возвращается. Если майнер был убит, при следующем запуске он восстанавливается первым делом.
 - **Сброс:** один раз выполните `freeforgempear --uv-reset` в папке майнера (или удалите `/hive-config/freeforgempear/uv.json`).
   Остальные параметры (`--uv-offset N`, `--uv-max N`, `--uv-reval-hours H`, `--auto-uv-dry-run`) и порядок ручной настройки —
-  в [MANUAL.md](MANUAL.md#12-андервольт---auto-uv-необязательно-новое-в-140). Андервольт — на ваш риск, как и любой разгон.
+  в [MANUAL.md](MANUAL.md#12-андервольт----auto-uv-необязательно-новое-в-140). Андервольт — на ваш риск, как и любой разгон.
 - **Смешанный риг:** достаточно `--auto-uv` — пределы выбираются по каждой карте (с 1.6.2): RTX 20xx / GTX 16xx до +225,
   CMP 30HX/40HX до +150 (CMP 50HX: +225), остальные до +495; `grep range` в логе майнера показывает диапазон каждой карты. Для ручного
   управления — по значению на карту в порядке nvidia-smi (GPU0, GPU1, ... как в логе майнера; или в порядке `--devices`), без пробелов:
@@ -203,7 +203,7 @@ RTX 3070 с *Mem lock* 810 дала 3,7 FW/s, со свободной памят
 майнер предупреждает в логе (один раз на GPU, с 1.6.1), но разгон сам не меняет.
 CMFD работает на образах HiveOS и с Ubuntu 20.04, и с 22.04 (движку в пакете нужна glibc 2.30+).
 `--auto-uv` в *Extra config* подбирает отдельное смещение ядра под CMFD на каждой карте прямо на нагрузке CMFD (каждый шаг
-проверяется побитно на реальной модели; первый запуск ~15–20 мин, дальше применяется сразу; ваше смещение возвращается при
+проверяется побитно; первый запуск ~15–20 мин, дальше применяется сразу; ваше смещение возвращается при
 `miner stop`). Подбирайте с тем профилем разгона, с которым майните: смена лимита мощности — подбор заново, смена лока частоты
 ядра — один раз `--uv-reset`. MANUAL.md, раздел 13.
 

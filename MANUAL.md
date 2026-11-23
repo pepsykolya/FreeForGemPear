@@ -13,27 +13,25 @@
 
 FreeForGemPear is a GPU miner for **Pearl (PRL)** (pearlhash proof-of-useful-work) on NVIDIA GPUs (and, since 1.6.0, AMD Radeon
 on Windows), with a **1% developer fee**. Since 1.6.0 it also mines Common Foundry (CMFD, section 13).
-It has its own CUDA kernel for Ampere: the A′ matrix is generated on-chip, the int8 tensor-core GEMM runs in a persistent
-kernel, and the jackpot fold and the BLAKE3 hash are fused into it. The main loop is hand-tuned at SASS level.
-The host builds and checks every share proof with the official `zk-pow` verifier before it is submitted.
+Every share proof is checked on the CPU with the official `zk-pow` verifier before it is submitted.
 
 | GPU series | Status |
 |---|---|
 | RTX 30xx (Ampere, sm_86): 3060 / 3060 Ti / 3070 / 3070 Ti / 3080 / 3090 | **main target, tuned: ~70 TH/s on an RTX 3070 at ~107 W** |
-| RTX 40xx (Ada, sm_89) | own SASS kernel since 1.5.4 (RTX 4070 Ti: same hashrate, ~10 W less than the RTX 30xx kernel) |
-| RTX 50xx (Blackwell, sm_120) | supported since 1.5.0 with a compiled kernel (untuned); needs driver 570+ |
+| RTX 40xx (Ada, sm_89) | tuned since 1.5.4 (RTX 4070 Ti: same hashrate, ~10 W less than before) |
+| RTX 50xx (Blackwell, sm_120) | supported since 1.5.0 (not tuned yet); needs driver 570+ |
 | CMP 50HX (TU102) | runs, but **not recommended for Pearl: ~2.6 TH/s per card** (int8 tensor cores cut ~17× against the CMP 40HX, on any driver) |
-| RTX 20xx / GTX 16xx / CMP 30HX–50HX (Turing, sm_75) | supported since 1.5.3 with an own SASS kernel: ~49.9 TH/s on an RTX 2060 SUPER @1605 MHz; **memory must be locked at 5001, not 810** |
-| AMD Radeon RX 6000 (RDNA2), Windows | **new in 1.6.0**, own OpenCL kernel: 34.4 TH/s on an RX 6800 XT (section 14) |
+| RTX 20xx / GTX 16xx / CMP 30HX–50HX (Turing, sm_75) | supported since 1.5.3: ~49.9 TH/s on an RTX 2060 SUPER @1605 MHz; **memory must be locked at 5001, not 810** |
+| AMD Radeon RX 6000 (RDNA2), Windows | **new in 1.6.0**: 34.4 TH/s on an RX 6800 XT (section 14) |
 | Older GPUs, A100 (sm_80), AMD on Linux / HiveOS | not supported |
 
 ### 2. Requirements
 
-* NVIDIA GPU: RTX 30 / RTX 40 (own kernels), RTX 20 / GTX 16 / CMP, RTX 50 (since 1.5.0); NVIDIA driver **525 or newer** (RTX 50xx: **570+**).
+* NVIDIA GPU: RTX 30 / RTX 40, RTX 20 / GTX 16 / CMP, RTX 50 (since 1.5.0); NVIDIA driver **525 or newer** (RTX 50xx: **570+**).
 * Or, on **Windows only**, an **AMD Radeon RX 6000** (RDNA2) card with the AMD Adrenalin driver (since 1.6.0, section 14).
 * HiveOS, Linux x86_64 (glibc 2.31+, Ubuntu 20.04+), or Windows 10/11 x64. No CUDA toolkit, no Python, no WSL.
 * A PRL wallet address (`prl1...`) and an internet connection to a Pearl stratum pool.
-* Video memory: the kernel works from the L2 cache and needs little VRAM.
+* Video memory: Pearl mining needs little VRAM.
 
 ### 3. HiveOS setup (step by step)
 
@@ -134,7 +132,6 @@ Native Windows build: no WSL, no CUDA installation, no Python. Only the NVIDIA d
   warning. Plain mining (wallet / pool only) does **not** need Administrator.
 * Defender / SmartScreen may flag a new unsigned `.exe`: *More info → Run anyway*, or add the folder to the exclusions.
 * Without `start.bat`: `freeforgempear.exe --pool pearl-eu2.luckypool.io:3360 --wallet YOUR_PRL_ADDRESS --worker rig1`
-* Build it yourself: `.\build-windows.ps1` (see the README).
 
 **Advanced: your own `.bat` with `nvidia-smi` clock lock + power limit.** If you also want a **power limit** (the built-in
 clock control does not set one), or prefer your own restart loop and log file, write a `.bat` like the one below and start it
@@ -159,7 +156,7 @@ miner 10 s after any exit, and `Tee-Object` writes a log while still showing the
 `nvidia-smi -rgc` and `nvidia-smi -rmc`. (The shipped `start.bat` does the clock lock and restart loop for you via `LOCK_CCLOCK` /
 `LOCK_MCLOCK` and `MOFFSET`; use a custom `.bat` like this only when you need `-pl` or your own logging.)
 Since 1.5.1 the Windows archive ships this file ready to edit: **`start-nvidia-smi.bat`** (clock lock, power limit, undervolt
-range, restart loop and `logsfgp.log` in the miner folder; the shipped values are for an RTX 3070, change them for your card).
+range, restart loop and `logs\ffgp.log` in the miner folder; the shipped values are for an RTX 3070, change them for your card).
 
 ### 6. Pools
 
@@ -201,14 +198,14 @@ the default is 2097152 (a 100 TH/s worker finds a share every ~90 s).
 **Proof compression.** Proofs are sent gzip-compressed (about 5 KB instead of about 270 KB: much less traffic, faster submits,
 fewer stale shares) when the pool agrees to it at login: since 1.4.4 the miner follows the Pearl stratum gzip protocol (sends
 `"type":"v2"` in `mining.authorize`; Kryptex and LuckyPool answer `"type":"v2"`, log: `pool confirmed gzip proofs`). A pool that does
-not confirm it gets uncompressed proofs. Since 1.4.5 the proof is compressed at the standard gzip level (~3 KB) and jobs that
-arrive before the login reply wait for it, so every proof follows the agreed format. `FFGP_PROOF_GZIP=on` / `off` forces the choice.
+not confirm it gets uncompressed proofs. Since 1.4.5 a compressed proof is about 3 KB and every proof follows the agreed
+format. `FFGP_PROOF_GZIP=on` / `off` forces the choice.
 **Kryptex users of 1.4.1–1.4.3:** those versions sent compressed proofs without this handshake; Kryptex answered "accepted" but did
 not credit the shares. Update to 1.4.4 or newer.
 
 ### 7. Overclocking (core lock, memory, V/F offset)
 
-The kernel works from the L2 cache and needs almost no VRAM bandwidth, so the memory clock can go down to the lowest value.
+Pearl mining needs almost no memory bandwidth, so the memory clock can go down to the lowest value.
 The three settings that matter: a **locked core clock**, a **low memory clock**, and a **V/F offset** (undervolt: the same
 clock at a lower voltage; `--auto-uv` finds it for you, section 12).
 
@@ -243,7 +240,7 @@ per GPU in `--devices` order: `--uv-max 225,495,150` (`-` = that GPU's default).
 **CMP cards (CMP 30HX / 40HX / 50HX).** CMP 30HX/40HX mine Pearl with the Turing kernel (memory locked at 5001, auto-uv
 limit +150). **CMP 50HX: not recommended for Pearl** — only ~2.6 TH/s per card (its int8 tensor cores are cut ~17x against the
 CMP 40HX, on every driver). **For Common Foundry (CMFD) the CMP 50HX works well:** ~13 FW/s per card at ~220 W (power limit
-225 W, core lock 1410 MHz, memory not locked; 4x CMP 50HX rig on the Aria pool), with `--auto-uv` (CMFD tuner, +225) about
+225 W, core lock 1410 MHz, memory not locked; 4x CMP 50HX rig on the Aria pool), with `--auto-uv` (+225) about
 13.2 FW/s at 196–203 W (+8–11 % FW/kWh); see section 13. CMFD needs ~7 GB of free GPU memory, so 6 GB cards (CMP 30HX) cannot
 run it. **Unlocking CMP cards is not part of FreeForGemPear:** we do not provide or support drivers or tools that lift the
 limits of CMP cards; all numbers here are for the cards as they are.
@@ -260,7 +257,7 @@ If shares get rejected or the log shows `bad` hits, lower the core clock or the 
 | Line | Meaning |
 |---|---|
 | `FreeForGemPear 1.4.9 \| pool ... \| worker ... \| N GPU(s)` | start banner |
-| `[pearlgpu] search kernel: SASS-patched cubin (...)` | the tuned kernel is loaded. `embedded search kernel could not be loaded (reason)` = the miner stops with an error (driver older than 525 or an unsupported GPU) |
+| `[pearlgpu] search kernel: ...` | the GPU kernel is loaded. `embedded search kernel could not be loaded (reason)` = the miner stops with an error (driver older than 525 or an unsupported GPU) |
 | `new job ... prepared in ...` | a new pool job is ready |
 | `[ 120s] GPU0 ... \| total X TH/s \| hits ... \| user sub S acc A rej R \| fee sub ... acc ... rej ...` | every 10 s: hashrate per GPU and in total; shares submitted / accepted / rejected for you and for the dev fee; `[DEVFEE]` while a fee slot runs Since 1.5.3 each GPU also shows its board power and efficiency, e.g. `GPU0 49.906 (151 W, 0.330 TH/W)`, and the total `\| 151 W, 0.330 TH/W` (when NVML is available) |
 | `[DISCONNECTED]` | the pool connection is down; the miner reconnects by itself |
@@ -292,7 +289,7 @@ The fee is a condition of the license: removing, reducing or redirecting it is n
 | Check that everything works | `freeforgempear --self-test` (Windows: `freeforgempear.exe --self-test`) must end with `== self-test PASSED ==` |
 | `embedded search kernel could not be loaded` at start | update the NVIDIA driver (525+; **RTX 50xx needs 570+**) and check that the GPU is Ampere (RTX 30xx) or newer |
 | High CPU load | by default GPU waits sleep (well under 10% of a core per GPU). `PEARL_SPIN=1` makes them spin (a full core per GPU): make sure it is not set |
-| `pg_init(...)` or out-of-memory errors | another program holds the GPU (games, local AI models). Close it or choose GPUs with `--devices` |
+| GPU initialization or out-of-memory errors | another program holds the GPU (games, local AI models). Close it or choose GPUs with `--devices` |
 | `[DISCONNECTED]` for a long time | check the pool host/port and the firewall (outgoing TCP); try another region from section 6 |
 | Many rejected shares | lower the core clock (section 7), check cooling |
 | Hashrate drops after a few minutes, Task Manager shows *Video Encode* load | screen sharing, recording or streaming (Discord screen share, OBS, NVIDIA App / Instant Replay) runs on the same GPU and takes its share; stop it or turn off hardware acceleration in that program |
@@ -301,7 +298,6 @@ The fee is a condition of the license: removing, reducing or redirecting it is n
 | Windows: `.exe` blocked by Defender / SmartScreen | *More info → Run anyway*, or add the folder to the exclusions; check the SHA-256 |
 
 Environment variables (set before starting the miner): `PEARL_SPIN=1` (spin-wait instead of sleeping).
-`FFGP_M=N` sets the rows of A per attempt (a multiple of 128). By default `m` is 47104 and the miner picks `m` for each GPU from its SM count (`m = 128 * SM * r`), so a mixed-SM rig balances every card — one job per SM group, each card mines its own (new in 1.4.7). Set `FFGP_M` only to experiment: it forces one `m` on every device, and a larger `m` gives slightly higher throughput at the cost of more host RAM.
 On Windows: `set PEARL_SPIN=1` in a `cmd` window, then run `start.bat` from that window.
 
 ### 12. Undervolt / `--auto-uv` (optional, new in 1.4.0)
@@ -314,25 +310,22 @@ means fewer watts at the same hashrate: the clock stays where you locked it (sec
 
 **What it does**
 1. Reads the V/F offset the card has now (HiveOS OC, your own script, ...) and writes it to a restore file *before* changing anything.
-2. Warms the GPU up for 3 minutes, then raises the offset in steps of **15 MHz**. Every step is checked for about 30 s in a
-   separate process: the same job is computed thousands of times and every tile of every result is compared bit for bit,
-   the hit counts of normal mining attempts are compared, and found results are verified on the CPU with the official verifier.
-   Wrong results without any driver error do happen near the limit, which is why the checks are done on the GPU *and* the CPU.
-3. The first mismatch, CUDA error, Xid error or hang ends the climb. The result is the **last good step minus one step (15 MHz
-   margin)**, confirmed by a longer check (about 2 minutes); if the confirmation fails it goes one step lower. The highest
+2. Warms the GPU up, then raises the offset step by step. Every step is checked bit-exactly under full load, and found results
+   are verified on the CPU with the official verifier. Wrong results without any driver error do happen near the limit, which
+   is why the checks are done on the GPU *and* the CPU.
+3. The first wrong result, CUDA error, Xid error or hang ends the climb. The miner settles on a value with a **safety margin**
+   below the limit and confirms it with a longer check; if the confirmation fails it goes lower. The highest
    value tried is +495 (`--uv-max`, at most +600; before 1.5.1 it was +300 with a hard cap of +400); since 1.6.2 it is +225 on
    Turing (RTX 20xx / GTX 16xx) and +150 on CMP 30HX/40HX (CMP 50HX: +225) unless `--uv-max` says otherwise. RTX 40/50 cards often hold +450..480.
    A saved result above a lowered limit is not used as is: the card runs at the limit (after a quick check) and the saved
    result is kept for when the limit goes up again; a saved result that *is* the old limit is tuned again when the limit rises.
-4. The result is saved in `uv.json`, keyed by GPU UUID, driver version and kernel build. Later starts apply it after a
-   quick check (about 30 s). If the driver, the kernel build or your starting offset changed, the GPU is tuned again.
-   Each check runs in a child process that needs about 2.4 GB of RAM (`FFGP_UV_CHECK_MB`): on a rig with little RAM the
-   checks of several GPUs run together only while the free RAM covers them, the others wait (`waits for RAM` in the log) and
-   go next; mining starts when every GPU is tuned or applied. While mining, a re-check takes its RAM first and only then
-   pauses its GPU (since 1.6.3), so a GPU that waits for RAM keeps mining.
+4. The result is saved in `uv.json`, per GPU, driver version and miner version. Later starts apply it after a
+   quick check (about 30 s). If the driver, the miner version or your starting offset changed, the GPU is tuned again.
+   The checks need about 2.4 GB of RAM per GPU: on a rig with little RAM some GPUs wait for their turn (`waits for RAM` in the
+   log); mining starts when every GPU is tuned or applied. Since 1.6.3 a GPU that waits for RAM for a re-check keeps mining.
 5. While mining: every 6 hours (`--uv-reval-hours`) the setting is re-checked (mining on that GPU pauses for about 30 s).
-   If a found result fails the CPU verification, or a burst of rejected shares appears, the offset goes one step down (never
-   below your own value) and is saved. **OC applies (since 1.6.3):** HiveOS `nvidia-oc` writes the *Core Clock* value of the
+   If a problem shows up while mining (a result fails the CPU check, many rejected shares), the offset goes one step down
+   (never below your own value) and is saved. **OC applies (since 1.6.3):** HiveOS `nvidia-oc` writes the *Core Clock* value of the
    OC profile at every miner start and every OC change, **0 when that field is empty** — before 1.6.3 this switched the
    undervolt off until the next restart (a 4x RTX 3070 rig ran at 604 W instead of ~440 W). Now an offset that is read back as
    0, as the HiveOS profile value or as your own starting offset counts as an OC apply: auto-uv sets the verified offset again
@@ -345,17 +338,16 @@ means fewer watts at the same hashrate: the clock stays where you locked it (sec
    restores your offset first, from the restore file `uv-restore.json`. A reboot resets the offset in the driver anyway.
 
 Only the V/F offset is changed: locked clocks, power limit and memory are not touched. Only the GPUs the miner mines on are
-touched. NVML device numbers differ from CUDA numbers, so every GPU is matched by its PCI bus id (and UUID); the log shows the
-bus id of each change.
+touched. Every GPU is matched by its PCI bus id; the log shows the bus id of each change.
 
 **Requirements.** NVIDIA driver (NVML is loaded at run time, nothing to install) and **root** on Linux / HiveOS (the miner
 runs as root there) or **Administrator** on Windows. Without NVML or permission the miner logs the reason and mines normally.
-**Time:** the first tuning takes about **15 minutes per GPU** (10-25 depending on how many steps it takes; the GPUs of a rig are tuned in parallel and mining starts when
+**Time:** the first tuning takes about **15 minutes per GPU** (10-25 depending on the card; the GPUs of a rig are tuned in parallel and mining starts when
 it is done). Later starts add about 30 s.
 
 **Windows: step by step.** Checked on Windows 11 with a GeForce RTX 3070 and driver 581.80: the driver lets the miner read
 and change the offset (the log shows `allowed -1000..1000`), the tuner found +240 instead of +225 (98.4 W → 86.5 W at the
-same clock), and the safety net worked too (a found result failed the CPU check → back to +225, auto-uv paused for 24 h).
+same clock), and the safety net worked too (after an error it went back to +225 and paused auto-uv for 24 h).
 1. **Administrator.** Right-click the `.bat` → *Run as administrator*. For autostart create a Task Scheduler task with
    *Run with highest privileges*. Without it the log says that the offset cannot be changed, and the miner just mines.
 2. **Lock the core clock** (section 7): `set "LOCK_CCLOCK=1560"` in `start.bat` (one value, or a comma list per GPU), or
@@ -378,9 +370,9 @@ same clock), and the safety net worked too (a found result failed the CPU check 
    `freeforgempear.exe --uv-reset` in that folder) and start again. A new driver or a new miner kernel triggers a new tuning by itself.
 7. **Read the result:** `findstr auto-uv logs\*.log` (`start-nvidia-smi.bat`: `logs\ffgp.log`). Example from that RTX 3070:
 ```
-auto-uv: GPU0 (bus 04, RTX 3070): CUDA device 0 -> NVML index 0, PCI 0000:04:00.0, ..., current offset +225 (allowed -1000..1000)
-auto-uv: GPU0 (bus 04, RTX 3070) step +255: ok (6560 reruns, cpu ok 6), 94.0 W, 1560 MHz, 58 C
-auto-uv: GPU0 (bus 04, RTX 3070) step +270: FAILED (rerun_diff: 256 transcript word(s) differ between reruns of seed 3 ...)
+auto-uv: GPU0 (bus 04, RTX 3070): ..., PCI 0000:04:00.0, current offset +225 (allowed -1000..1000)
+auto-uv: GPU0 (bus 04, RTX 3070) step +255: ok (...), 94.0 W, 1560 MHz, 58 C
+auto-uv: GPU0 (bus 04, RTX 3070) step +270: FAILED (...)
 auto-uv: GPU0 (bus 04, RTX 3070) offset +225 -> +240, 98.4 W -> 86.5 W, saved
 ```
    * `auto-uv paused for this GPU for 24 h`: the card had an error at the found offset; it mines at your own offset and
@@ -390,9 +382,9 @@ auto-uv: GPU0 (bus 04, RTX 3070) offset +225 -> +240, 98.4 W -> 86.5 W, saved
    * `no safe offset above ... was found`: the card does not take more than your own value; nothing is changed.
 8. **If the PC hangs or the driver resets** (black screen, "display driver stopped responding"): reboot and start the miner
    again; it first restores your offset from `uv-restore.json`. If the miner itself crashed during a tuning step (window shows
-   `Miner exited (code -1073741819)`), the next start counts that step as failed and tunes only below it (since 1.5.2; before,
-   it started the whole search again and crashed at the same step). Since 1.5.3 it also skips the steps that already
-   passed: after the warm-up it goes straight to the confirmation (about 5 minutes instead of a full search). If a card keeps failing, lower `UV_MAX` or leave `AUTO_UV` off.
+   `Miner exited (code -1073741819)`), the next start remembers that offset as failed and stays below it (since 1.5.2; before,
+   it could crash at the same point again). Since 1.5.3 it also keeps the progress already made, so the next start
+   takes about 5 minutes instead of a full search. If a card keeps failing, lower `UV_MAX` or leave `AUTO_UV` off.
 
 **Windows: ready combinations.** Right-click `start.bat` → *Edit*, remove `rem` before `set "AUTO_UV=1"`, fill in the
 fields below, save, and start it **as Administrator**. Empty fields keep their defaults. Values are starting points from
@@ -447,7 +439,7 @@ offset first. Use it at your own risk, as with any overclocking.
 | `--uv-max N` | highest offset the tuner tries (at most 600; default per card: RTX 20xx / GTX 16xx / CMP 50HX 225, CMP 30HX/40HX 150, all others 495; on Windows: `set "UV_MAX=480"` in `start.bat`) |
 | `--uv-min N` | offset the tuner starts from and never goes below (default: the HiveOS/driver offset, else 120; RTX 40: at least 200, RTX 50: at least 300; Windows: `UV_MIN`) |
 | `--uv-step N` | MHz per tuning step (default 15; Windows: `UV_STEP`) |
-| `--uv-keep-last` | after a failed step keep the last good step (default: the last good step minus one step) |
+| `--uv-keep-last` | keep the highest offset that passed, without the extra safety margin |
 | `--uv-reval-hours H` | re-validation interval while mining (default 6, `0` = never) |
 | `--uv-dir DIR` | where `uv.json` and `uv-restore.json` are kept (also `FFGP_STATE_DIR`) |
 | `--auto-uv-dry-run` | only logs which GPUs would be changed (CUDA device → NVML device, bus id) and their ranges; changes nothing |
@@ -466,10 +458,10 @@ Default location of the files: next to the binary (Windows: the miner folder), o
 
 **Log lines** (all start with `auto-uv:`, so `grep auto-uv` shows the story):
 ```
-auto-uv: GPU0 (bus 0d, RTX 3070): CUDA device 0 -> NVML index 1, PCI 0000:0D:00.0, GPU-0d06..., current offset +150
+auto-uv: GPU0 (bus 0d, RTX 3070): ..., PCI 0000:0D:00.0, current offset +150
 auto-uv: GPU0 (bus 0d, RTX 3070): range +150..+495 (max: default; start: current offset)
-auto-uv: GPU0 (bus 0d, RTX 3070) step +195: ok (1952 reruns, cpu ok 6), 110.4 W, 1560 MHz, 53 C
-auto-uv: GPU0 (bus 0d, RTX 3070) step +225: FAILED (rerun_diff: ...)
+auto-uv: GPU0 (bus 0d, RTX 3070) step +195: ok (...), 110.4 W, 1560 MHz, 53 C
+auto-uv: GPU0 (bus 0d, RTX 3070) step +225: FAILED (...)
 auto-uv: GPU0 (bus 0d, RTX 3070) offset +150 -> +195, 116.6 W -> 106.6 W, saved
 auto-uv: GPU0 (bus 0d, RTX 3070) offset +195 -> +150 restored
 ```
@@ -493,10 +485,9 @@ value with `--uv-offset N` and do not copy another card's number.
 ### 13. Common Foundry (CMFD), new in 1.6.0
 
 The same binary also mines **Common Foundry (CMFD, ForgeMatrix V4)**. The CMFD work is done by the
-**FreeForgeMiner** engine (MIT, <https://github.com/pepsykolya/freeforgeminer>, release 1.2.4), in the `cmfd/` folder of the
-package: Windows uses the release binaries unchanged; the Linux/HiveOS binaries are built from the same pinned source on
-Ubuntu 20.04, so they run on every HiveOS (Ubuntu 20.04 and 22.04 images). FreeForGemPear prepares the model, runs one engine process per GPU, applies your clock
-settings, prints its usual stats line and restarts an engine that exits.
+**FreeForgeMiner** engine (MIT, <https://github.com/pepsykolya/freeforgeminer>, release 1.2.4), in the `cmfd` folder of the
+package; the Linux/HiveOS package runs on every HiveOS (Ubuntu 20.04 and 22.04 images). FreeForGemPear prepares the model,
+runs the engine on every GPU, applies your clock settings, prints its usual stats line and restarts an engine that exits.
 
 **The coin follows the pool URL**: a `cmfd+tls://` URL means CMFD (`--algo cmfd|pearl` forces it). The wallet is your
 CMFD address in either form: `cmfd1...` (63 characters with a checksum, as the Common Foundry wallet
@@ -530,8 +521,8 @@ means a changed certificate: take the new line from the pool, never disable the 
 # Midas Mining:
 ./freeforgempear --pool 'cmfd+tls://24.107.152.151:29745?pin=2ee4e6a028b07b300753dff3c260b79763c5e748d4e78b86cf3855e97eb2e80e' \
     --wallet cmfd1YOUR_ADDRESS --worker rig1
-./freeforgempear --algo cmfd --self-test        # GPU check, no pool: exact comparison with the reference path; with the model
-                                                # also the official Common Foundry 1.0.16 test vector (32 nonces, SHA-256)
+./freeforgempear --algo cmfd --self-test        # GPU check, no pool; with the model also the official
+                                                # Common Foundry 1.0.16 test vector
 ```
 Quote the URL in a shell (`?` is a wildcard). Run as root if the miner should reset an undervolt offset (see below).
 
@@ -562,25 +553,21 @@ for CMFD with amduv (section 14, since 1.6.3); on NVIDIA see below.
 Safe settings: stock clocks, a power limit, or a core lock (`--lock-cclock`).
 
 **`--auto-uv` for CMFD (NVIDIA).** With `--auto-uv` (HiveOS: *Extra config arguments*; Windows: `AUTO_UV=1` in
-`start-cmfd.bat`, run as Administrator) the miner finds an undervolt **for CMFD itself**, separate from the Pearl result.
-After the model is prepared and before the engine starts, per card: the engine's own GPU worker (`cmfd-v4-replay`, unchanged)
-loads the model once and runs two fixed batches again and again; at the base offset (0, stock) it takes their final digests as
-the reference and runs the official Common Foundry 1.0.16 test vector; then the core offset goes up in `--uv-step` steps
-(15 MHz) from `--uv-min` (default: one step above 0) up to `--uv-max` (default: the per-card limit of section 12: 495,
-RTX 20xx / CMP 50HX 225, CMP 30HX/40HX 150); every step runs 30 s + 10 s of measurement and **every digest must be
-bit-identical** to the reference (a single wrong bit anywhere in the 384 layers changes it). The first failing step is the
-edge; the result is one step lower (`--uv-keep-last` keeps the last good one), confirmed for 2 minutes + the test vector
-(one more step down on failure). It is saved in `uv.json` (section `cmfd`, per card UUID, with the driver and the engine/worker
-identity) and later starts apply it at once (or after a 30 s check when it was verified more than `--uv-reval-hours` ago).
+`start-cmfd.bat`, run as Administrator) the miner finds an undervolt **for CMFD itself**, separate from the Pearl result,
+after the model is prepared and before the engine starts. Every step is checked bit-exactly on the real model, together with
+the official Common Foundry 1.0.16 test vector, and the result keeps a safety margin (`--uv-keep-last` drops the margin).
+The range is `--uv-min` / `--uv-max` (default: the per-card limit of section 12: 495, RTX 20xx / CMP 50HX 225,
+CMP 30HX/40HX 150). The result is saved in `uv.json` (section `cmfd`, per card, driver and engine version) and later starts
+apply it at once (or after a short check when it was verified more than `--uv-reval-hours` ago).
 While mining, an engine `INTEGRITY | ERROR` or a CUDA fault on a tuned card steps its offset back one step (saved) and
 restarts the engine. Your own offset comes back on exit (and after a crash at the next start), as without `--auto-uv`.
-If the check cannot run (no model, worker missing, failure at the base offset) the card mines at 0 with a WARNING.
-Tuning takes about 2 + 0.75 × steps minutes per card (all cards at once). Log: `grep "auto-uv (cmfd)"`, e.g.
+If the check cannot run (no model, engine files missing, failure at stock) the card mines at 0 with a WARNING.
+All cards are tuned at once. Log: `grep "auto-uv (cmfd)"`, e.g.
 `auto-uv (cmfd): GPU0 (bus 0d, RTX 3070) CMFD offset +0 -> +135: 19.53 -> 20.94 FW/s, 210.7 -> 215.8 W, ... saved`.
 Measured (Aria, averages of the stats line): RTX 3070 with a 135 W power limit is power-bound at ~1050 MHz, where the voltage
-is already at the bottom of the curve: edge +225, result +195, no gain (13.84 → 13.97 FW/s at 135 W). The same card at 220 W:
-stock 19.5 FW/s at 214 W (328 k FW/kWh) → +135 (edge +165) 20.4–20.5 FW/s at 213–216 W (342–345 k, **+4–5 %**).
-CMP 50HX (power limit 225 W, core locked at 1410 MHz): no edge up to its +225 limit; 13.10 FW/s at 216 W → 13.21 at 196 W
+is already at the bottom of the curve: result +195, no gain (13.84 → 13.97 FW/s at 135 W). The same card at 220 W:
+stock 19.5 FW/s at 214 W (328 k FW/kWh) → +135 20.4–20.5 FW/s at 213–216 W (342–345 k, **+4–5 %**).
+CMP 50HX (power limit 225 W, core locked at 1410 MHz): holds its +225 limit; 13.10 FW/s at 216 W → 13.21 at 196 W
 (**+11 %**), 13.01 at 217 W → 13.17 at 203 W (**+8 %**). **The edge depends on the operating point**: the result is tuned again
 when the power limit changes by more than 3 % or `--lock-cclock` changes; after changing the core clock lock of the OC profile
 (HiveOS, nvidia-smi) run once with `--uv-reset`.
@@ -615,12 +602,11 @@ line (pin) from the pool's site.
 
 ### 14. AMD Radeon (Windows), new in 1.6.0
 
-The Windows package also mines on **AMD Radeon** cards with its own OpenCL kernel (`pearlgpu_amd.dll`, closed source like
-the CUDA one). Same binary, same start files, same log; the miner picks the GPU library by itself:
+The Windows package also mines on **AMD Radeon** cards (OpenCL). Same binary, same start files, same log; the miner picks the GPU library by itself:
 
 * `--backend auto` (default): the CUDA library if it sees an NVIDIA GPU, otherwise the AMD library. `--backend amd` /
   `--backend cuda` (or `FFGP_BACKEND`) force it. The log shows the choice: `1 GPU(s) [amd]` and
-  `[pearlgpu-amd] gfx1030: amd-a0 udot4 k8192`.
+  `[pearlgpu-amd] gfx1030: ...`.
 * Only **discrete** Radeon cards are used; the integrated "AMD Radeon(TM) Graphics" of Ryzen CPUs is skipped.
 * One process drives one vendor: on a PC with NVIDIA and AMD cards run two miners (`--backend cuda` and `--backend amd`).
 
@@ -642,38 +628,36 @@ thread busy; `PEARL_AMD_SPIN=0` / `FFGP_PROC_PRIO=0` turn it off.
 watts may be swapped between cards (the rig total is right).
 
 **Undervolt (`--auto-uv`) on AMD** works differently from NVIDIA: the miner starts the `amduv.exe` tool next to it, which
-tunes the core clock limit at the lowest core voltage (every point is checked bit-for-bit on the GPU and the CPU), once per
-card / driver / AMD library version (~10–15 min), and then applies the result at each start. A guard process puts **your own
+tunes the clocks and the voltage for the best TH per watt (every point is checked bit-exactly on the GPU and the CPU), once per
+card / driver / miner version (~10–15 min), and then applies the result at each start. A guard process puts **your own
 clock / voltage / power-limit settings back** when the miner exits, also after a crash or a kill. Run as Administrator.
 Result on our RX 6800 XT: about 30–32 TH/s at 160–172 W instead of 34 TH/s at ~260 W (+40 % TH/W). `$FFGP_AMD_UV_GOAL=max`
 keeps more speed; `--uv-reset` forgets the result. `--uv-offset`, `--lock-cclock`, `--lock-mclock` and `--moffset` are
 NVIDIA-only (the miner refuses them with AMD).
 
-**CMFD on AMD:** `start-cmfd.bat` / `--pool cmfd+tls://…` works the same way; the package runs its OpenCL worker
-`cmfd\cmfd-v4-replay-ocl.exe` and the pool client `cmfd\cmfd-miner-ffgp.exe` (FreeForgeMiner rebuilt with the small patch in
-`cmfd/patches/`, so it runs without nvidia-smi). Needs ~7 GB of free GPU memory. RX 6800 XT: ~10 FW/s at ~275 W (an RTX 3070
+**CMFD on AMD:** `start-cmfd.bat` / `--pool cmfd+tls://…` works the same way; the package runs the AMD version of the
+FreeForgeMiner engine from its `cmfd` folder. Needs ~7 GB of free GPU memory. RX 6800 XT: ~10 FW/s at ~275 W (an RTX 3070
 does ~20 FW/s): CMFD is much better on NVIDIA tensor cores.
 
 **Undervolt for CMFD on AMD (since 1.6.3):** remove `rem` before `set "AUTO_UV=1"` in `start-cmfd.bat` (run it as
 Administrator), or add `--auto-uv` to a CMFD command line. `amduv.exe` keeps a **separate CMFD result**: CMFD computes wrongly
 at clocks where Pearl is still fine (RX 6800 XT at the lowest voltage: Pearl passes up to 2250 MHz, CMFD fails from 2200–2250),
-so the Pearl point is never used for CMFD. Every point is checked on the real model: the OpenCL worker runs fixed batches of 32
-nonces again and again, and their final digests (BLAKE3 over all 384 layers) must equal bit for bit the ones taken at stock —
-one wrong bit anywhere changes them. The first start tunes (~15–20 min, once per card / driver / worker / model), later starts
-apply the saved point (a 15-second check when the last one is older than 6 h). The guard puts **your own clock / voltage /
+so the Pearl point is never used for CMFD. Every point is checked bit-exactly on the real model against the results at stock.
+The first start tunes (~15–20 min, once per card / driver / engine / model), later starts
+apply the saved point (a short check when the last one is older than 6 h). The guard puts **your own clock / voltage /
 power-limit settings back** when the miner exits, also after a crash or a kill. `UV_GOAL` in `start-cmfd.bat`
 (`$FFGP_AMD_UV_GOAL`) picks one of the tuned profiles:
 
-| Profile | How it is found | RX 6800 XT (ASIC watts, ADLX) |
+| Profile | Goal | RX 6800 XT (ASIC watts, ADLX) |
 |---|---|---|
 | — (stock) | | 10.0 FW/s at 280 W (36 FW/kJ) |
-| `eff` | lowest voltage, max clock raised until the check fails, one step back | 2100 MHz / 881 mV: 9.1 FW/s at 193 W (47 FW/kJ, **+32 %**; −9 % FW/s) |
+| `eff` | the most FW per watt | 2100 MHz / 881 mV: 9.1 FW/s at 193 W (47 FW/kJ, **+32 %**; −9 % FW/s) |
 | `bal` (default) | the most FW per watt that keeps ≥ 90 % of the stock FW/s | = `eff` on this card |
-| `max` | your max clock, voltage lowered until the check fails, one step back up | 2324 MHz / 1075 mV: 10.1 FW/s at 248 W (41 FW/kJ, +14 %; same speed) |
+| `max` | stock speed at a lower voltage | 2324 MHz / 1075 mV: 10.1 FW/s at 248 W (41 FW/kJ, +14 %; same speed) |
 
 On the Aria pool through the miner (10–15 min each, average of the stats line): stock 9.9 FW/s at 277 W, `bal` 9.1 FW/s at
-191 W (+33 % FW/W), `max` 10.0 FW/s at 247 W (+14 %); no rejected shares, engine `INTEGRITY | ok`. The edge moves a little from
-run to run (2200 MHz at 881 mV passed twice and failed once), so the tuner always keeps one step of margin.
+191 W (+33 % FW/W), `max` 10.0 FW/s at 247 W (+14 %); no rejected shares, engine `INTEGRITY | ok`. The limit moves a little from
+run to run, so the tuner always keeps a safety margin.
 
 Not useful on Windows: the power limit goes down only to −6 % (264 W, +4 % FW/W); the memory clock can only be raised
 (2000–2150 MHz: no gain, and wrong results at 2150), the fast memory timing changes nothing. `--uv-reset` forgets the Pearl
@@ -686,27 +670,25 @@ and CMFD results (the next `--auto-uv` start tunes again).
 ### 1. Что это
 
 FreeForGemPear — GPU-майнер **Pearl (PRL)** (pearlhash, proof-of-useful-work) для видеокарт NVIDIA с **комиссией разработчика 1%**.
-Собственное CUDA-ядро для Ampere: матрица A′ генерируется на кристалле, int8-GEMM на тензорных ядрах идёт в
-персистентном ядре, а свёртка jackpot и хеш BLAKE3 слиты с ним. Главный цикл настроен вручную на уровне SASS.
-Хост строит и проверяет доказательство каждой шары официальным верификатором `zk-pow` до отправки.
+Доказательство каждой шары проверяется на CPU официальным верификатором `zk-pow` до отправки.
 
 | Серия | Статус |
 |---|---|
 | RTX 30xx (Ampere, sm_86): 3060 / 3060 Ti / 3070 / 3070 Ti / 3080 / 3090 | **основная цель, оптимизировано: ~70 TH/s на RTX 3070 при ~107 Вт** |
-| RTX 40xx (Ada, sm_89) | своё SASS-ядро с 1.5.4 (RTX 4070 Ti: тот же хэшрейт, на ~10 Вт меньше, чем с ядром RTX 30xx) |
-| RTX 50xx (Blackwell, sm_120) | поддержка с 1.5.0, компилированное ядро (без оптимизации); нужен драйвер 570+ |
+| RTX 40xx (Ada, sm_89) | оптимизировано с 1.5.4 (RTX 4070 Ti: тот же хэшрейт, на ~10 Вт меньше, чем раньше) |
+| RTX 50xx (Blackwell, sm_120) | поддержка с 1.5.0 (пока без оптимизации); нужен драйвер 570+ |
 | CMP 50HX (TU102) | работает, но **для Pearl не рекомендуется: ~2.6 TH/s на карту** (int8 тензорные ядра урезаны ~в 17 раз относительно CMP 40HX, на любом драйвере) |
-| RTX 20xx / GTX 16xx / CMP 30HX–50HX (Turing, sm_75) | поддержка с 1.5.3, собственное SASS-ядро: ~49,9 TH/s на RTX 2060 SUPER @1605 МГц; **память лочить на 5001, не 810** |
-| AMD Radeon RX 6000 (RDNA2), Windows | **новое в 1.6.0**, своё ядро OpenCL: 34,4 TH/s на RX 6800 XT (раздел 14) |
+| RTX 20xx / GTX 16xx / CMP 30HX–50HX (Turing, sm_75) | поддержка с 1.5.3: ~49,9 TH/s на RTX 2060 SUPER @1605 МГц; **память лочить на 5001, не 810** |
+| AMD Radeon RX 6000 (RDNA2), Windows | **новое в 1.6.0**: 34,4 TH/s на RX 6800 XT (раздел 14) |
 | Старые карты, A100 (sm_80), AMD в Linux / HiveOS | не поддерживаются |
 
 ### 2. Требования
 
-* Видеокарта NVIDIA: RTX 30 / RTX 40 (свои ядра), RTX 20 / GTX 16 / CMP, RTX 50 (с 1.5.0); драйвер NVIDIA **525 или новее** (RTX 50xx: **570+**).
+* Видеокарта NVIDIA: RTX 30 / RTX 40, RTX 20 / GTX 16 / CMP, RTX 50 (с 1.5.0); драйвер NVIDIA **525 или новее** (RTX 50xx: **570+**).
 * Или, **только в Windows**, карта **AMD Radeon RX 6000** (RDNA2) с драйвером AMD Adrenalin (с 1.6.0, раздел 14).
 * HiveOS, Linux x86_64 (glibc 2.31+, Ubuntu 20.04+) или Windows 10/11 x64. CUDA toolkit, Python и WSL не нужны.
 * Адрес кошелька PRL (`prl1...`) и интернет до stratum-пула Pearl.
-* Видеопамять: ядро работает из L2-кэша и почти не использует VRAM.
+* Видеопамять: майнингу Pearl почти не нужна VRAM.
 
 ### 3. Настройка в HiveOS (по шагам)
 
@@ -807,7 +789,6 @@ cd freeforgempear-1.6.3
   текущих частотах и с предупреждением в логе. Для обычного майнинга (только кошелёк/пул) администратор **не** нужен.
 * Defender / SmartScreen может ругаться на новый неподписанный `.exe`: *Подробнее → Выполнить в любом случае* или добавьте папку в исключения.
 * Без `start.bat`: `freeforgempear.exe --pool pearl-eu2.luckypool.io:3360 --wallet ВАШ_АДРЕС_PRL --worker rig1`
-* Собрать самому: `.\build-windows.ps1` (см. README).
 
 **Продвинутый вариант: свой `.bat` с фиксацией частот и лимитом мощности через `nvidia-smi`.** Если нужен ещё и **лимит
 мощности** (встроенное управление частотами его не задаёт) или свой цикл перезапуска и файл лога — сделайте `.bat` как ниже и
@@ -832,7 +813,7 @@ goto loop
 `nvidia-smi -rgc` и `nvidia-smi -rmc`. (Штатный `start.bat` делает фиксацию частот и цикл перезапуска за вас через `LOCK_CCLOCK` /
 `LOCK_MCLOCK` и `MOFFSET`; свой `.bat` нужен только ради `-pl` или собственного лога.)
 С 1.5.1 такой файл лежит в Windows-архиве готовым: **`start-nvidia-smi.bat`** (фиксация частот, лимит мощности, диапазон
-андервольта, цикл перезапуска и лог `logsfgp.log` в папке майнера; значения в нём — для RTX 3070, поменяйте под свою карту).
+андервольта, цикл перезапуска и лог `logs\ffgp.log` в папке майнера; значения в нём — для RTX 3070, поменяйте под свою карту).
 
 ### 6. Пулы
 
@@ -879,7 +860,7 @@ goto loop
 
 ### 7. Разгон (лок ядра, память, V/F offset)
 
-Ядро работает из L2-кэша и почти не нагружает видеопамять, поэтому частоту памяти можно опустить до минимума.
+Майнингу Pearl почти не нужна пропускная способность памяти, поэтому частоту памяти можно опустить до минимума.
 Важны три настройки: **зафиксированная частота ядра**, **низкая частота памяти** и **V/F offset** (андервольт: та же
 частота при меньшем напряжении; `--auto-uv` подберёт его сам, раздел 12).
 
@@ -914,7 +895,7 @@ auto-uv начинает поиск на RTX 40 с +200, на RTX 50 — с +300
 **Карты CMP (CMP 30HX / 40HX / 50HX).** CMP 30HX/40HX майнят Pearl на Turing-ядре (память лочить на 5001, предел auto-uv +150).
 **CMP 50HX для Pearl не рекомендуется** — всего ~2,6 TH/s на карту (int8 тензорные ядра урезаны ~в 17 раз относительно CMP 40HX,
 на любом драйвере). **Для Common Foundry (CMFD) CMP 50HX подходит:** ~13 FW/s на карту при ~220 Вт (лимит мощности 225 Вт,
-лок ядра 1410 МГц, память без лока; риг 4× CMP 50HX, пул Aria), с `--auto-uv` (подбор под CMFD, +225) — около 13,2 FW/s при
+лок ядра 1410 МГц, память без лока; риг 4× CMP 50HX, пул Aria), с `--auto-uv` (+225) — около 13,2 FW/s при
 196–203 Вт (+8–11 % FW/kWh); см. раздел 13. CMFD нужно ~7 ГБ свободной видеопамяти, на картах с 6 ГБ (CMP 30HX) он не
 запустится. **Разблокировка CMP не входит в FreeForGemPear:** драйверов и программ, снимающих ограничения CMP-карт, мы не
 предоставляем и не поддерживаем; все цифры здесь — для карт как есть.
@@ -931,7 +912,7 @@ auto-uv начинает поиск на RTX 40 с +200, на RTX 50 — с +300
 | Строка | Значение |
 |---|---|
 | `FreeForGemPear 1.4.9 \| pool ... \| worker ... \| N GPU(s)` | стартовая строка |
-| `[pearlgpu] search kernel: SASS-patched cubin (...)` | загружено настроенное ядро. `embedded search kernel could not be loaded (причина)` = майнер останавливается с ошибкой (драйвер старше 525 или неподдерживаемая карта) |
+| `[pearlgpu] search kernel: ...` | GPU-ядро загружено. `embedded search kernel could not be loaded (причина)` = майнер останавливается с ошибкой (драйвер старше 525 или неподдерживаемая карта) |
 | `new job ... prepared in ...` | готово новое задание пула |
 | `[ 120s] GPU0 ... \| total X TH/s \| hits ... \| user sub S acc A rej R \| fee sub ... acc ... rej ...` | каждые 10 с: хэшрейт по картам и общий; отправленные / принятые / отклонённые шары ваши и комиссии; `[DEVFEE]` пока идёт слот комиссии С 1.5.3 у каждой карты также видны потребление и эффективность, например `GPU0 49.906 (151 W, 0.330 TH/W)`, и итог `\| 151 W, 0.330 TH/W` (если доступен NVML) |
 | `[DISCONNECTED]` | соединение с пулом потеряно; майнер переподключится сам |
@@ -962,7 +943,7 @@ auto-uv начинает поиск на RTX 40 с +200, на RTX 50 — с +300
 | Проверить, что всё работает | `freeforgempear --self-test` (Windows: `freeforgempear.exe --self-test`) должен закончиться строкой `== self-test PASSED ==` |
 | При старте `embedded search kernel could not be loaded` | обновите драйвер NVIDIA (525+; **для RTX 50xx нужен 570+**) и проверьте, что карта Ampere (RTX 30xx) или новее |
 | Высокая загрузка CPU | по умолчанию ожидание GPU спит (заметно меньше 10% ядра на карту). `PEARL_SPIN=1` включает активное ожидание (ядро CPU на карту): убедитесь, что она не задана |
-| Ошибки `pg_init(...)` или нехватка памяти | видеокарту занимает другая программа (игры, локальные нейросети). Закройте её или выберите карты через `--devices` |
+| Ошибки инициализации GPU или нехватка памяти | видеокарту занимает другая программа (игры, локальные нейросети). Закройте её или выберите карты через `--devices` |
 | Долго `[DISCONNECTED]` | проверьте хост/порт пула и брандмауэр (исходящий TCP); попробуйте другой регион из раздела 6 |
 | Много отклонённых шаров | снизьте частоту ядра (раздел 7), проверьте охлаждение |
 | Хэшрейт падает через несколько минут, в Диспетчере задач нагрузка *Video Encode* | демонстрация экрана, запись или стрим (демонстрация экрана в Discord, OBS, NVIDIA App / Instant Replay) работают на той же видеокарте и отнимают её долю; остановите их или выключите в этой программе аппаратное ускорение |
@@ -971,7 +952,6 @@ auto-uv начинает поиск на RTX 40 с +200, на RTX 50 — с +300
 | Windows: `.exe` блокирует Defender / SmartScreen | *Подробнее → Выполнить в любом случае* или добавьте папку в исключения; сверьте SHA-256 |
 
 Переменные окружения (задаются до запуска майнера): `PEARL_SPIN=1` (активное ожидание вместо сна).
-`FFGP_M=N` задаёт число строк A за попытку (кратно 128). По умолчанию `m` равен 47104, и майнер сам подбирает `m` для каждой GPU по числу её SM (`m = 128 * SM * r`), поэтому на риге с разным числом SM каждая карта работает со своим `m` — по одному заданию на группу SM (с 1.4.7). Задавайте `FFGP_M` только для экспериментов: он задаёт один `m` на всех устройствах, а чем больше `m`, тем немного выше производительность, но тем больше расход оперативной памяти хоста.
 В Windows: `set PEARL_SPIN=1` в окне `cmd`, затем запустите `start.bat` из этого же окна.
 
 ### 12. Андервольт / `--auto-uv` (необязательно, новое в 1.4.0)
@@ -985,26 +965,23 @@ auto-uv начинает поиск на RTX 40 с +200, на RTX 50 — с +300
 **Что делает**
 1. Читает V/F offset, который стоит сейчас (разгон в HiveOS, ваш скрипт и т. п.), и записывает его в файл восстановления
    *до* любых изменений.
-2. Прогревает карту 3 минуты, затем поднимает offset шагами по **15 МГц**. Каждый шаг около 30 с проверяется в отдельном
-   процессе: одна и та же задача считается тысячи раз, каждый тайл каждого результата сравнивается побитно, сравниваются
-   счётчики попаданий обычных майнинговых попыток, а найденные результаты проверяются на CPU официальным верификатором.
-   У предела бывают неверные результаты без всякой ошибки драйвера, поэтому проверка идёт и на GPU, и на CPU.
-3. Первое расхождение, ошибка CUDA, Xid или зависание останавливают подъём. Итог — **последний успешный шаг минус один шаг
-   (запас 15 МГц)**, подтверждённый более длинной проверкой (около 2 минут); если подтверждение не прошло, берётся шагом ниже.
+2. Прогревает карту, затем поднимает offset шаг за шагом. Каждый шаг проверяется побитно под полной нагрузкой, а найденные
+   результаты проверяются на CPU официальным верификатором. У предела бывают неверные результаты без всякой ошибки драйвера,
+   поэтому проверка идёт и на GPU, и на CPU.
+3. Первый неверный результат, ошибка CUDA, Xid или зависание останавливают подъём. Майнер останавливается на значении
+   с **запасом** ниже предела и подтверждает его более длинной проверкой; если подтверждение не прошло, берётся ниже.
    Выше +495 не поднимается (`--uv-max`, максимум +600; до 1.5.1 было +300 с жёстким потолком +400); с 1.6.2 на Turing
    (RTX 20xx / GTX 16xx) — выше +225, на CMP 30HX/40HX — выше +150 (CMP 50HX — выше +225), если `--uv-max` не задан. Карты RTX 40/50 часто держат +450..480.
    Сохранённый результат выше уменьшенного предела не применяется как есть: карта работает на пределе (после быстрой проверки),
    а сохранённый результат остаётся на случай, когда предел снова поднимут; если результат *равен* старому пределу, при
    повышении предела карта подбирается заново.
-4. Результат сохраняется в `uv.json` с ключом: UUID карты, версия драйвера, сборка ядра. При следующих запусках он
-   применяется после быстрой проверки (около 30 с). Если изменились драйвер, сборка ядра или ваш начальный offset,
+4. Результат сохраняется в `uv.json` для каждой карты, версии драйвера и версии майнера. При следующих запусках он
+   применяется после быстрой проверки (около 30 с). Если изменились драйвер, версия майнера или ваш начальный offset,
    карта подбирается заново.
-   Каждая проверка идёт в отдельном процессе, которому нужно около 2,4 ГБ ОЗУ (`FFGP_UV_CHECK_MB`): на риге с малым объёмом
-   ОЗУ проверки нескольких карт идут одновременно, только пока хватает свободной памяти, остальные ждут (`waits for RAM` в
-   логе) и идут следом; майнинг начинается, когда все карты подобраны или применены. Во время майнинга перепроверка сначала
-   получает память и только потом ставит карту на паузу (с 1.6.3) — карта, ждущая ОЗУ, продолжает майнить.
+   Проверкам нужно около 2,4 ГБ ОЗУ на карту: на риге с малым объёмом ОЗУ часть карт ждёт своей очереди (`waits for RAM` в
+   логе); майнинг начинается, когда все карты подобраны или применены. С 1.6.3 карта, ждущая ОЗУ для перепроверки, продолжает майнить.
 5. Во время майнинга: каждые 6 часов (`--uv-reval-hours`) настройка перепроверяется (майнинг на этой карте приостанавливается
-   примерно на 30 с). Если найденный результат не прошёл проверку на CPU или пошла серия отклонённых шар, offset
+   примерно на 30 с). Если во время майнинга появилась проблема (результат не прошёл проверку на CPU, много отклонённых шар), offset
    снижается на шаг (но не ниже вашего значения) и сохраняется. **Применение разгона (с 1.6.3):** `nvidia-oc` в HiveOS при
    каждом старте майнера и каждой смене OC записывает значение *Core Clock* из профиля разгона, **0, если поле пустое** — до
    1.6.3 это выключало андервольт до следующего перезапуска (риг 4× RTX 3070 ел 604 Вт вместо ~440). Теперь offset, который
@@ -1019,17 +996,16 @@ auto-uv начинает поиск на RTX 40 с +200, на RTX 50 — с +300
    offset в драйвере.
 
 Меняется только V/F offset: зафиксированные частоты, лимит мощности и память не затрагиваются. Затрагиваются только карты,
-на которых майнер работает. Номера устройств NVML отличаются от номеров CUDA, поэтому каждая карта сопоставляется по
-PCI-адресу (шине) и UUID; в логе у каждого изменения указан адрес шины.
+на которых майнер работает. Каждая карта сопоставляется по PCI-адресу (шине); в логе у каждого изменения указан адрес шины.
 
 **Требования.** Драйвер NVIDIA (NVML подгружается во время работы, ставить ничего не нужно) и **root** в Linux / HiveOS
 (там майнер запускается от root) или **администратор** в Windows. Без NVML или прав майнер пишет причину в лог и
-майнит как обычно. **Время:** первый подбор занимает около **15 минут на карту** (10-25 в зависимости от числа шагов; карты рига подбираются параллельно,
+майнит как обычно. **Время:** первый подбор занимает около **15 минут на карту** (10-25 в зависимости от карты; карты рига подбираются параллельно,
 майнинг начинается после окончания). Последующие запуски добавляют около 30 с.
 
 **Windows: по шагам.** Проверено на Windows 11, GeForce RTX 3070, драйвер 581.80: драйвер даёт майнеру читать и менять
 offset (в логе `allowed -1000..1000`), подбор нашёл +240 вместо +225 (98.4 Вт → 86.5 Вт на той же частоте), и защита тоже
-сработала (найденный результат не прошёл проверку на CPU → обратно на +225, auto-uv на паузе 24 ч).
+сработала (после ошибки вернула +225 и поставила auto-uv на паузу на 24 ч).
 1. **Администратор.** Правой кнопкой по `.bat` → *Запуск от имени администратора*. Для автозапуска — задача в Планировщике
    с галкой *Выполнить с наивысшими правами*. Без прав в логе будет сказано, что offset поменять нельзя, и майнер просто майнит.
 2. **Зафиксируйте частоту ядра** (раздел 7): `set "LOCK_CCLOCK=1560"` в `start.bat` (одно значение или список через запятую
@@ -1054,9 +1030,9 @@ offset (в логе `allowed -1000..1000`), подбор нашёл +240 вме�
    запускают подбор заново сами.
 7. **Результат смотрите так:** `findstr auto-uv logs\*.log` (у `start-nvidia-smi.bat` — `logs\ffgp.log`). Пример с той RTX 3070:
 ```
-auto-uv: GPU0 (bus 04, RTX 3070): CUDA device 0 -> NVML index 0, PCI 0000:04:00.0, ..., current offset +225 (allowed -1000..1000)
-auto-uv: GPU0 (bus 04, RTX 3070) step +255: ok (6560 reruns, cpu ok 6), 94.0 W, 1560 MHz, 58 C
-auto-uv: GPU0 (bus 04, RTX 3070) step +270: FAILED (rerun_diff: 256 transcript word(s) differ between reruns of seed 3 ...)
+auto-uv: GPU0 (bus 04, RTX 3070): ..., PCI 0000:04:00.0, current offset +225 (allowed -1000..1000)
+auto-uv: GPU0 (bus 04, RTX 3070) step +255: ok (...), 94.0 W, 1560 MHz, 58 C
+auto-uv: GPU0 (bus 04, RTX 3070) step +270: FAILED (...)
 auto-uv: GPU0 (bus 04, RTX 3070) offset +225 -> +240, 98.4 W -> 86.5 W, saved
 ```
    * `auto-uv paused for this GPU for 24 h` — на найденном offset у карты была ошибка; она майнит на вашем offset, подбор
@@ -1066,9 +1042,9 @@ auto-uv: GPU0 (bus 04, RTX 3070) offset +225 -> +240, 98.4 W -> 86.5 W, saved
    * `no safe offset above ... was found` — карта не держит больше вашего значения; ничего не меняется.
 8. **Если ПК завис или сбросился драйвер** (чёрный экран, «видеодрайвер перестал отвечать»): перезагрузитесь и запустите
    майнер снова — он сначала вернёт ваш offset из `uv-restore.json`. Если сам майнер упал на шаге подбора (в окне
-   `Miner exited (code -1073741819)`), следующий запуск считает этот шаг провальным и подбирает только ниже него (с 1.5.2;
-   раньше подбор начинался заново и падал на том же шаге). С 1.5.3 он ещё и не проходит заново уже пройденные шаги:
-   после прогрева сразу подтверждение (около 5 минут вместо полного подбора). Если карта сбоит снова и снова, уменьшите `UV_MAX` или
+   `Miner exited (code -1073741819)`), следующий запуск запоминает этот offset как провальный и остаётся ниже него (с 1.5.2;
+   раньше майнер мог снова упасть на том же месте). С 1.5.3 он ещё и сохраняет уже сделанный прогресс, поэтому
+   следующий запуск занимает около 5 минут вместо полного подбора. Если карта сбоит снова и снова, уменьшите `UV_MAX` или
    не включайте `AUTO_UV`.
 
 **Windows: готовые комбинации.** Правой кнопкой по `start.bat` → *Изменить*, уберите `rem` перед `set "AUTO_UV=1"`,
@@ -1126,7 +1102,7 @@ set "UV_MAX=495"
 | `--uv-max N` | наибольший offset, который пробует подбор (максимум 600; по умолчанию по карте: RTX 20xx / GTX 16xx / CMP 50HX 225, CMP 30HX/40HX 150, остальные 495; в Windows: `set "UV_MAX=480"` в `start.bat`) |
 | `--uv-min N` | offset, с которого начинается подбор и ниже которого не опускается (по умолчанию offset из HiveOS/драйвера, иначе 120; RTX 40 — не ниже 200, RTX 50 — не ниже 300) |
 | `--uv-step N` | шаг подбора в МГц (по умолчанию 15) |
-| `--uv-keep-last` | после неудачного шага оставить последний удачный шаг (по умолчанию — последний удачный минус один шаг) |
+| `--uv-keep-last` | оставить наибольший прошедший offset, без дополнительного запаса |
 | `--uv-reval-hours H` | интервал перепроверки во время майнинга (по умолчанию 6, `0` — не перепроверять) |
 | `--uv-dir DIR` | где лежат `uv.json` и `uv-restore.json` (также `FFGP_STATE_DIR`) |
 | `--auto-uv-dry-run` | только пишет в лог, какие карты были бы изменены (устройство CUDA → устройство NVML, шина); ничего не меняет |
@@ -1145,10 +1121,10 @@ set "UV_MAX=495"
 
 **Строки лога** (все начинаются с `auto-uv:`, так что `grep auto-uv` показывает всю историю):
 ```
-auto-uv: GPU0 (bus 0d, RTX 3070): CUDA device 0 -> NVML index 1, PCI 0000:0D:00.0, GPU-0d06..., current offset +150
+auto-uv: GPU0 (bus 0d, RTX 3070): ..., PCI 0000:0D:00.0, current offset +150
 auto-uv: GPU0 (bus 0d, RTX 3070): range +150..+495 (max: default; start: current offset)
-auto-uv: GPU0 (bus 0d, RTX 3070) step +195: ok (1952 reruns, cpu ok 6), 110.4 W, 1560 MHz, 53 C
-auto-uv: GPU0 (bus 0d, RTX 3070) step +225: FAILED (rerun_diff: ...)
+auto-uv: GPU0 (bus 0d, RTX 3070) step +195: ok (...), 110.4 W, 1560 MHz, 53 C
+auto-uv: GPU0 (bus 0d, RTX 3070) step +225: FAILED (...)
 auto-uv: GPU0 (bus 0d, RTX 3070) offset +150 -> +195, 116.6 W -> 106.6 W, saved
 auto-uv: GPU0 (bus 0d, RTX 3070) offset +195 -> +150 restored
 ```
@@ -1172,10 +1148,9 @@ auto-uv: GPU0 (bus 0d, RTX 3070) offset +195 -> +150 restored
 ### 13. Common Foundry (CMFD), новое в 1.6.0
 
 Тот же бинарник майнит и **Common Foundry (CMFD, ForgeMatrix V4)**. Работу по CMFD делает движок **FreeForgeMiner**
-(MIT, <https://github.com/pepsykolya/freeforgeminer>, релиз 1.2.4), он лежит в папке `cmfd/` пакета: в Windows —
-релизные файлы без изменений, в Linux/HiveOS — собранные из того же закреплённого исходника на Ubuntu 20.04, чтобы работать на любом
+(MIT, <https://github.com/pepsykolya/freeforgeminer>, релиз 1.2.4), он лежит в папке `cmfd` пакета; пакет для Linux/HiveOS работает на любом
 HiveOS (образы на Ubuntu 20.04 и 22.04).
-FreeForGemPear готовит модель, запускает по процессу движка на каждую GPU, применяет ваши настройки частот, печатает свою
+FreeForGemPear готовит модель, запускает движок на каждой GPU, применяет ваши настройки частот, печатает свою
 обычную строку статистики и перезапускает упавший движок.
 
 **Монета определяется по адресу пула**: адрес `cmfd+tls://` — это CMFD (`--algo cmfd|pearl` задаёт явно). Кошелёк —
@@ -1210,8 +1185,8 @@ HiveOS).
 # Midas Mining:
 ./freeforgempear --pool 'cmfd+tls://24.107.152.151:29745?pin=2ee4e6a028b07b300753dff3c260b79763c5e748d4e78b86cf3855e97eb2e80e' \
     --wallet cmfd1ВАШ_АДРЕС --worker rig1
-./freeforgempear --algo cmfd --self-test        # проверка GPU без пула: точное сравнение с эталонным путём; при наличии модели
-                                                # ещё официальный тест-вектор Common Foundry 1.0.16 (32 nonce, SHA-256)
+./freeforgempear --algo cmfd --self-test        # проверка GPU без пула; при наличии модели ещё
+                                                # официальный тест-вектор Common Foundry 1.0.16
 ```
 В оболочке адрес берите в кавычки (`?` — шаблон). Запускайте от root, если майнер должен сбросить андервольт-смещение (ниже).
 
@@ -1242,24 +1217,19 @@ HiveOS показывает FW/s по каждой карте; первый за
 Безопасно: стоковые частоты, лимит мощности или лок ядра (`--lock-cclock`).
 
 **`--auto-uv` для CMFD (NVIDIA).** С `--auto-uv` (HiveOS — *Extra config arguments*; Windows — `AUTO_UV=1` в
-`start-cmfd.bat`, запуск от администратора) майнер подбирает андервольт **именно под CMFD**, отдельно от результата Pearl.
-После подготовки модели и до старта движка, на каждой карте: родной GPU-воркер движка (`cmfd-v4-replay`, без изменений)
-один раз грузит модель и гоняет две фиксированные пачки; на базовом смещении (0, сток) их финальные дайджесты берутся
-эталоном и прогоняется официальный тест-вектор Common Foundry 1.0.16; затем смещение ядра растёт шагами `--uv-step` (15 МГц)
-от `--uv-min` (по умолчанию — шаг над 0) до `--uv-max` (по умолчанию — лимит карты из раздела 12: 495, RTX 20xx / CMP 50HX
-225, CMP 30HX/40HX 150); каждый шаг — 30 с + 10 с замера, и **каждый дайджест должен совпасть побитно** с эталоном (один
-неверный бит где угодно в 384 слоях его меняет). Первый упавший шаг — край; результат — на шаг ниже (`--uv-keep-last`
-оставляет последний удачный), подтверждение 2 минуты + тест-вектор (при ошибке ещё шаг вниз). Результат сохраняется в
-`uv.json` (раздел `cmfd`, по UUID карты, с драйвером и идентичностью движка/воркера), следующие запуски применяют его сразу
-(или после 30-секундной проверки, если он проверялся больше `--uv-reval-hours` назад). Во время майнинга `INTEGRITY | ERROR`
+`start-cmfd.bat`, запуск от администратора) майнер подбирает андервольт **именно под CMFD**, отдельно от результата Pearl,
+после подготовки модели и до старта движка. Каждый шаг проверяется побитно на настоящей модели вместе с официальным
+тест-вектором Common Foundry 1.0.16, а результат оставляет запас (`--uv-keep-last` убирает запас). Диапазон —
+`--uv-min` / `--uv-max` (по умолчанию — лимит карты из раздела 12: 495, RTX 20xx / CMP 50HX 225, CMP 30HX/40HX 150).
+Результат сохраняется в `uv.json` (раздел `cmfd`, по карте, драйверу и версии движка), следующие запуски применяют его сразу
+(или после короткой проверки, если он проверялся больше `--uv-reval-hours` назад). Во время майнинга `INTEGRITY | ERROR`
 движка или CUDA-сбой на тюненой карте — шаг назад (с сохранением) и перезапуск движка. Ваше смещение возвращается при
 выходе (после аварии — при следующем запуске), как и без `--auto-uv`. Если проверка не может работать (нет модели, нет
-воркера, ошибка на базовом смещении) — карта майнит на 0 с предупреждением WARNING. Подбор занимает около 2 + 0,75 × число
-шагов минут на карту (все карты одновременно). Лог: `grep "auto-uv (cmfd)"`.
+файлов движка, ошибка на стоке) — карта майнит на 0 с предупреждением WARNING. Все карты подбираются одновременно. Лог: `grep "auto-uv (cmfd)"`.
 Замеры (Aria, среднее строки статистики): RTX 3070 с лимитом 135 Вт упирается в мощность на ~1050 МГц, где напряжение уже
-на дне кривой: край +225, результат +195, выигрыша нет (13,84 → 13,97 FW/s при 135 Вт). Та же карта при 220 Вт: сток 19,5 FW/s
-при 214 Вт (328 тыс. FW/kWh) → +135 (край +165) 20,4–20,5 FW/s при 213–216 Вт (342–345 тыс., **+4–5 %**). CMP 50HX (лимит
-225 Вт, лок ядра 1410 МГц): края до своего предела +225 нет; 13,10 FW/s при 216 Вт → 13,21 при 196 Вт (**+11 %**), 13,01 при
+на дне кривой: результат +195, выигрыша нет (13,84 → 13,97 FW/s при 135 Вт). Та же карта при 220 Вт: сток 19,5 FW/s
+при 214 Вт (328 тыс. FW/kWh) → +135 20,4–20,5 FW/s при 213–216 Вт (342–345 тыс., **+4–5 %**). CMP 50HX (лимит
+225 Вт, лок ядра 1410 МГц): держит свой предел +225; 13,10 FW/s при 216 Вт → 13,21 при 196 Вт (**+11 %**), 13,01 при
 217 Вт → 13,17 при 203 Вт (**+8 %**). **Край зависит от рабочей точки**: результат подбирается заново, если лимит мощности
 изменился больше чем на 3 % или изменился `--lock-cclock`; после смены лока частоты ядра в профиле разгона (HiveOS,
 nvidia-smi) запустите один раз с `--uv-reset`.
@@ -1293,12 +1263,12 @@ RTX 3070 (лимит 135 Вт) 14,1 FW/s при 135 Вт — столько же
 
 ### 14. AMD Radeon (Windows), новое в 1.6.0
 
-Пакет для Windows майнит и на картах **AMD Radeon** — своим ядром OpenCL (`pearlgpu_amd.dll`, закрытое, как и CUDA-ядро).
+Пакет для Windows майнит и на картах **AMD Radeon** — (OpenCL).
 Тот же бинарник, те же файлы запуска, тот же лог; библиотеку GPU майнер выбирает сам:
 
 * `--backend auto` (по умолчанию): CUDA-библиотека, если она видит карту NVIDIA, иначе AMD. `--backend amd` / `--backend cuda`
   (или `FFGP_BACKEND`) задают выбор явно. В логе видно, что выбрано: `1 GPU(s) [amd]` и
-  `[pearlgpu-amd] gfx1030: amd-a0 udot4 k8192`.
+  `[pearlgpu-amd] gfx1030: ...`.
 * Используются только **дискретные** карты Radeon; встроенная графика Ryzen «AMD Radeon(TM) Graphics» пропускается.
 * Один процесс — один производитель: на ПК с картами NVIDIA и AMD запустите два майнера (`--backend cuda` и `--backend amd`).
 
@@ -1320,38 +1290,36 @@ CPU при этом занят; `PEARL_AMD_SPIN=0` / `FFGP_PROC_PRIO=0` откл
 отдельных карт могут перепутаться между картами (сумма по ригу верна).
 
 **Андервольт (`--auto-uv`) на AMD** устроен иначе, чем у NVIDIA: майнер запускает лежащую рядом утилиту `amduv.exe`, она один
-раз на карту / драйвер / версию AMD-библиотеки (~10–15 мин) подбирает предел частоты ядра на минимальном напряжении (каждая точка
+раз на карту / драйвер / версию майнера (~10–15 мин) подбирает частоты и напряжение под лучший TH на ватт (каждая точка
 проверяется побитно на GPU и на CPU), а при следующих запусках применяет результат. Отдельный сторож **возвращает ваши
 настройки частоты / напряжения / лимита мощности**, когда майнер завершается, в том числе после падения или kill. Запуск от
 администратора. На нашей RX 6800 XT: около 30–32 TH/s при 160–172 Вт вместо 34 TH/s при ~260 Вт (+40 % TH/Вт).
 `$FFGP_AMD_UV_GOAL=max` оставляет больше скорости; `--uv-reset` забывает результат. `--uv-offset`, `--lock-cclock`,
 `--lock-mclock` и `--moffset` — только для NVIDIA (с AMD майнер их не принимает).
 
-**CMFD на AMD:** `start-cmfd.bat` / `--pool cmfd+tls://…` работают так же; пакет запускает свой OpenCL-воркер
-`cmfd\cmfd-v4-replay-ocl.exe` и клиент пула `cmfd\cmfd-miner-ffgp.exe` (FreeForgeMiner, пересобранный с небольшим патчем из
-`cmfd/patches/`, чтобы работать без nvidia-smi). Нужно ~7 ГБ свободной видеопамяти. RX 6800 XT: ~10 FW/s при ~275 Вт (RTX 3070 —
+**CMFD на AMD:** `start-cmfd.bat` / `--pool cmfd+tls://…` работают так же; пакет запускает AMD-версию движка
+FreeForgeMiner из своей папки `cmfd`. Нужно ~7 ГБ свободной видеопамяти. RX 6800 XT: ~10 FW/s при ~275 Вт (RTX 3070 —
 ~20 FW/s): CMFD гораздо выгоднее на тензорных ядрах NVIDIA.
 
 **Андервольт для CMFD на AMD (с 1.6.3):** уберите `rem` перед `set "AUTO_UV=1"` в `start-cmfd.bat` (запуск от администратора)
 или добавьте `--auto-uv` в командную строку CMFD. `amduv.exe` хранит **отдельный результат для CMFD**: CMFD считает неверно на
 частотах, где Pearl ещё работает (RX 6800 XT на минимальном напряжении: Pearl проходит до 2250 МГц, CMFD ошибается уже с
-2200–2250), поэтому точка Pearl для CMFD не используется. Каждая точка проверяется на настоящей модели: OpenCL-воркер снова и
-снова считает фиксированные пачки по 32 nonce, и их финальные дайджесты (BLAKE3 по всем 384 слоям) должны побитно совпасть со
-снятыми на стоке — один неверный бит где угодно их меняет. Первый запуск подбирает (~15–20 мин, один раз на карту / драйвер /
-воркер / модель), следующие применяют сохранённую точку (проверка 15 с, если прошлая была больше 6 ч назад). Сторож **возвращает
+2200–2250), поэтому точка Pearl для CMFD не используется. Каждая точка проверяется побитно на настоящей модели против результатов на стоке.
+Первый запуск подбирает (~15–20 мин, один раз на карту / драйвер /
+движок / модель), следующие применяют сохранённую точку (короткая проверка, если прошлая была больше 6 ч назад). Сторож **возвращает
 ваши настройки частоты / напряжения / лимита мощности**, когда майнер завершается, в том числе после падения или kill.
 `UV_GOAL` в `start-cmfd.bat` (`$FFGP_AMD_UV_GOAL`) выбирает один из подобранных профилей:
 
-| Профиль | Как находится | RX 6800 XT (Вт чипа, ADLX) |
+| Профиль | Цель | RX 6800 XT (Вт чипа, ADLX) |
 |---|---|---|
 | — (сток) | | 10,0 FW/s при 280 Вт (36 FW/кДж) |
-| `eff` | минимальное напряжение, предел частоты вверх до ошибки проверки, шаг назад | 2100 МГц / 881 мВ: 9,1 FW/s при 193 Вт (47 FW/кДж, **+32 %**; −9 % FW/s) |
+| `eff` | больше всего FW на ватт | 2100 МГц / 881 мВ: 9,1 FW/s при 193 Вт (47 FW/кДж, **+32 %**; −9 % FW/s) |
 | `bal` (по умолчанию) | больше всего FW на ватт при ≥ 90 % стоковых FW/s | на этой карте = `eff` |
-| `max` | ваша макс. частота, напряжение вниз до ошибки проверки, шаг обратно вверх | 2324 МГц / 1075 мВ: 10,1 FW/s при 248 Вт (41 FW/кДж, +14 %; скорость та же) |
+| `max` | стоковая скорость при меньшем напряжении | 2324 МГц / 1075 мВ: 10,1 FW/s при 248 Вт (41 FW/кДж, +14 %; скорость та же) |
 
 На пуле Aria через майнер (по 10–15 мин, среднее по строке статистики): сток 9,9 FW/s при 277 Вт, `bal` 9,1 FW/s при 191 Вт
-(+33 % FW/Вт), `max` 10,0 FW/s при 247 Вт (+14 %); отклонённых шар нет, у движка `INTEGRITY | ok`. Край немного плавает от
-прогона к прогону (2200 МГц при 881 мВ прошли дважды и один раз нет), поэтому тюнер всегда оставляет шаг запаса.
+(+33 % FW/Вт), `max` 10,0 FW/s при 247 Вт (+14 %); отклонённых шар нет, у движка `INTEGRITY | ok`. Предел немного плавает от
+прогона к прогону, поэтому тюнер всегда оставляет запас.
 
 Бесполезно в Windows: лимит мощности опускается только до −6 % (264 Вт, +4 % FW/Вт); частоту памяти можно только поднять
 (2000–2150 МГц: прироста нет, а на 2150 — неверные результаты), быстрые тайминги памяти ничего не меняют. `--uv-reset` забывает
@@ -1364,26 +1332,25 @@ CPU при этом занят; `PEARL_AMD_SPIN=0` / `FFGP_PROC_PRIO=0` откл
 ### 1. 这是什么
 
 FreeForGemPear 是面向 NVIDIA 显卡的 **Pearl (PRL)**（pearlhash，有用工作量证明）GPU 矿工，开发者抽水 **1%**。
-它使用针对 Ampere 的自研 CUDA 内核：A′ 矩阵在芯片上生成，int8 张量核心 GEMM 在常驻内核中运行，jackpot 折叠和 BLAKE3
-哈希都融合在其中。主循环在 SASS 级别手工调优。提交之前，主机会用官方 `zk-pow` 验证器构建并检查每个份额的证明。
+提交之前，每个份额的证明都会在 CPU 上用官方 `zk-pow` 验证器检查。
 
 | 显卡系列 | 状态 |
 |---|---|
 | RTX 30xx（Ampere，sm_86）：3060 / 3060 Ti / 3070 / 3070 Ti / 3080 / 3090 | **主要目标，已调优：RTX 3070 约 70 TH/s，约 107 W** |
-| RTX 40xx（Ada，sm_89） | 自 1.5.4 起使用专用 SASS 内核（RTX 4070 Ti：算力相同，功耗比 RTX 30xx 内核低约 10 W） |
-| RTX 50xx（Blackwell，sm_120） | 自 1.5.0 起支持，使用编译内核（未调优）；需要驱动 570+ |
+| RTX 40xx（Ada，sm_89） | 自 1.5.4 起已调优（RTX 4070 Ti：算力相同，功耗比以前低约 10 W） |
+| RTX 50xx（Blackwell，sm_120） | 自 1.5.0 起支持（尚未调优）；需要驱动 570+ |
 | CMP 50HX（TU102） | 可以运行，但**不建议用于 Pearl：每卡约 2.6 TH/s**（int8 张量核心相比 CMP 40HX 被削减约 17 倍，与驱动无关） |
-| RTX 20xx / GTX 16xx / CMP 30HX–50HX（Turing，sm_75） | 自 1.5.3 起支持，专用 SASS 内核：RTX 2060 SUPER @1605 MHz 约 49.9 TH/s；**显存必须锁定 5001，不是 810** |
-| AMD Radeon RX 6000（RDNA2），Windows | **1.6.0 新增**，自有 OpenCL 内核：RX 6800 XT 上 34.4 TH/s（第 14 节） |
+| RTX 20xx / GTX 16xx / CMP 30HX–50HX（Turing，sm_75） | 自 1.5.3 起支持：RTX 2060 SUPER @1605 MHz 约 49.9 TH/s；**显存必须锁定 5001，不是 810** |
+| AMD Radeon RX 6000（RDNA2），Windows | **1.6.0 新增**：RX 6800 XT 上 34.4 TH/s（第 14 节） |
 | 更老的显卡、A100（sm_80）、Linux / HiveOS 上的 AMD | 不支持 |
 
 ### 2. 系统要求
 
-* NVIDIA 显卡：RTX 30 / RTX 40（专用内核）、RTX 20 / GTX 16 / CMP、RTX 50（自 1.5.0 起）；NVIDIA 驱动 **525 或更新**（RTX 50xx：**570+**）。
+* NVIDIA 显卡：RTX 30 / RTX 40、RTX 20 / GTX 16 / CMP、RTX 50（自 1.5.0 起）；NVIDIA 驱动 **525 或更新**（RTX 50xx：**570+**）。
 * 或者（**仅限 Windows**）使用 **AMD Radeon RX 6000**（RDNA2）显卡及 AMD Adrenalin 驱动（自 1.6.0 起，见第 14 节）。
 * HiveOS、Linux x86_64（glibc 2.31+，Ubuntu 20.04+）或 Windows 10/11 x64。不需要 CUDA toolkit、Python 或 WSL。
 * PRL 钱包地址（`prl1...`）以及到 Pearl stratum 矿池的网络连接。
-* 显存：内核从 L2 缓存工作，几乎不占用显存。
+* 显存：挖 Pearl 几乎不占用显存。
 
 ### 3. HiveOS 设置（分步说明）
 
@@ -1477,7 +1444,6 @@ cd freeforgempear-1.6.3
 * **任何 GPU 调节都需以管理员身份运行。** `AUTO_UV`、`LOCK_CCLOCK`、`LOCK_MCLOCK` 和 `MOFFSET` 通过驱动修改 GPU，需要管理员权限：右键 `.bat` →**以管理员身份运行**（开机自启时，在计划任务中勾选*使用最高权限运行*）。否则矿工仍会运行，但使用当前频率并在日志中给出警告。纯挖矿（仅钱包/矿池）**不**需要管理员。
 * Defender / SmartScreen 可能拦截新的未签名 `.exe`：点击"更多信息 → 仍要运行"，或将该文件夹加入排除项。
 * 不使用 `start.bat`：`freeforgempear.exe --pool pearl-eu2.luckypool.io:3360 --wallet 你的PRL地址 --worker rig1`
-* 自行编译：`.\build-windows.ps1`（见 README）。
 
 **进阶：使用 `nvidia-smi` 锁频 + 功耗限制的自定义 `.bat`。** 如果你还需要**功耗限制**（内置频率控制不设置功耗限制），或想要自己的重启循环和日志文件，可以写一个如下的 `.bat`，并**以管理员身份**运行（`nvidia-smi -lgc/-lmc/-pl` 和 `--auto-uv` 都需要管理员权限）：
 
@@ -1495,7 +1461,7 @@ goto loop
 ```
 
 把 `你的PRL地址` 换成你的 `prl1...` 地址（在 LuckyPool 上进行 PRL+NOCK 合并挖矿时追加 `+你的NOCK地址`）。`-lgc` 锁定核心频率，`-lmc` 锁定显存频率，`-pl` 设置功耗限制（瓦）；`timeout /t 10` + `goto loop` 在任何退出后 10 秒重启矿工，`Tee-Object` 在显示输出的同时写入日志。不重启即可解除锁定：`nvidia-smi -rgc` 和 `nvidia-smi -rmc`。（自带的 `start.bat` 已通过 `LOCK_CCLOCK` / `LOCK_MCLOCK` 和 `MOFFSET` 为你完成锁频和重启循环；仅当你需要 `-pl` 或自定义日志时才用这种自定义 `.bat`。）
-自 1.5.1 起 Windows 压缩包自带此文件，可直接编辑：**`start-nvidia-smi.bat`**（锁频、功耗限制、降压范围、重启循环，日志写入矿工目录下的 `logsfgp.log`；其中的数值针对 RTX 3070，请按你的显卡修改）。
+自 1.5.1 起 Windows 压缩包自带此文件，可直接编辑：**`start-nvidia-smi.bat`**（锁频、功耗限制、降压范围、重启循环，日志写入矿工目录下的 `logs\ffgp.log`；其中的数值针对 RTX 3070，请按你的显卡修改）。
 
 ### 6. 矿池
 
@@ -1535,7 +1501,7 @@ Pearl stratum gzip 协议（在 `mining.authorize` 中发送 `"type":"v2"`；Kry
 
 ### 7. 超频（锁定核心、显存、V/F 偏移）
 
-内核在 L2 缓存中运行，几乎不需要显存带宽，因此显存频率可以降到最低。
+挖 Pearl 几乎不需要显存带宽，因此显存频率可以降到最低。
 关键的三项设置：**锁定的核心频率**、**较低的显存频率**和 **V/F 偏移**（降压：同频率下更低的电压；`--auto-uv` 会自动找到，见第 12 节）。
 
 **FreeForGemPear 实测，RTX 3070：**核心锁定 `1560` MHz，显存 `810` MHz，功耗限制 `120` W →
@@ -1567,7 +1533,7 @@ Turing（RTX 20 / GTX 16 / CMP 30HX–50HX，sm_75）自 1.5.3 起支持：与 R
 **CMP 显卡（CMP 30HX / 40HX / 50HX）。** CMP 30HX/40HX 使用 Turing 内核挖 Pearl（显存锁定 5001，auto-uv 上限 +150）。**CMP 50HX
 不建议用于 Pearl**——每卡仅约 2.6 TH/s（int8 张量核心相比 CMP 40HX 被削减约 17 倍，与驱动无关）。**CMP 50HX 挖 Common Foundry
 （CMFD）表现良好：** 每卡约 13 FW/s、约 220 W（功耗限制 225 W，核心锁定 1410 MHz，显存不锁定；4× CMP 50HX 矿机，Aria 矿池），
-使用 `--auto-uv`（CMFD 调校，+225）约 13.2 FW/s、196–203 W（FW/kWh +8–11 %）；见第 13 节。CMFD 需要约 7 GB 空闲显存，6 GB 显卡
+使用 `--auto-uv`（+225）约 13.2 FW/s、196–203 W（FW/kWh +8–11 %）；见第 13 节。CMFD 需要约 7 GB 空闲显存，6 GB 显卡
 （CMP 30HX）无法运行。**FreeForGemPear 不提供 CMP 解锁：** 我们不提供也不支持解除 CMP 显卡限制的驱动或工具；这里的所有数据均为显卡原状下的结果。
 
 * HiveOS：Overclock 选项卡 → 核心频率（绝对值）、显存频率（绝对值）、功耗限制；V/F 偏移用 `--auto-uv`。
@@ -1582,7 +1548,7 @@ Turing（RTX 20 / GTX 16 / CMP 30HX–50HX，sm_75）自 1.5.3 起支持：与 R
 | 行 | 含义 |
 |---|---|
 | `FreeForGemPear 1.4.9 \| pool ... \| worker ... \| N GPU(s)` | 启动横幅 |
-| `[pearlgpu] search kernel: SASS-patched cubin (...)` | 已加载调优内核。`embedded search kernel could not be loaded (原因)` = 矿工报错退出（驱动低于 525 或显卡不受支持） |
+| `[pearlgpu] search kernel: ...` | GPU 内核已加载。`embedded search kernel could not be loaded (原因)` = 矿工报错退出（驱动低于 525 或显卡不受支持） |
 | `new job ... prepared in ...` | 新的矿池任务已就绪 |
 | `[ 120s] GPU0 ... \| total X TH/s \| hits ... \| user sub S acc A rej R \| fee sub ... acc ... rej ...` | 每 10 秒：每块显卡和总算力；你和抽水的已提交 / 已接受 / 已拒绝份额；抽水时段显示 `[DEVFEE]` 自 1.5.3 起每块显卡还显示功耗和能效，例如 `GPU0 49.906 (151 W, 0.330 TH/W)`，以及总计 `\| 151 W, 0.330 TH/W`（需要 NVML） |
 | `[DISCONNECTED]` | 与矿池断开；矿工会自动重连 |
@@ -1612,7 +1578,7 @@ Turing（RTX 20 / GTX 16 / CMP 30HX–50HX，sm_75）自 1.5.3 起支持：与 R
 | 检查一切是否正常 | `freeforgempear --self-test`（Windows：`freeforgempear.exe --self-test`）应以 `== self-test PASSED ==` 结束 |
 | 启动时出现 `embedded search kernel could not be loaded` | 更新 NVIDIA 驱动（525+；**RTX 50xx 需要 570+**），并确认显卡为 Ampere（RTX 30xx）或更新 |
 | CPU 占用高 | 默认 GPU 等待为休眠（每块显卡远低于一个核心的 10%）。`PEARL_SPIN=1` 会改为忙等（每块显卡占满一个核心）：确认没有设置 |
-| `pg_init(...)` 或显存不足错误 | 其他程序占用了显卡（游戏、本地 AI 模型）。关闭它，或用 `--devices` 选择显卡 |
+| GPU 初始化错误或显存不足错误 | 其他程序占用了显卡（游戏、本地 AI 模型）。关闭它，或用 `--devices` 选择显卡 |
 | 长时间 `[DISCONNECTED]` | 检查矿池主机/端口和防火墙（出站 TCP）；试试第 6 节的其他区域 |
 | 大量被拒绝的份额 | 降低核心频率（第 7 节），检查散热 |
 | 几分钟后算力下降，任务管理器显示 *Video Encode* 负载 | 屏幕共享、录屏或直播（Discord 屏幕共享、OBS、NVIDIA App / 即时重放）在同一块 GPU 上运行并占用算力；请停止它，或在该程序中关闭硬件加速 |
@@ -1621,7 +1587,6 @@ Turing（RTX 20 / GTX 16 / CMP 30HX–50HX，sm_75）自 1.5.3 起支持：与 R
 | Windows：`.exe` 被 Defender / SmartScreen 拦截 | 点击"更多信息 → 仍要运行"，或将文件夹加入排除项；核对 SHA-256 |
 
 环境变量（启动矿工前设置）：`PEARL_SPIN=1`（忙等代替休眠）。
-`FFGP_M=N` 设置每次尝试的 A 行数（须为 128 的倍数）。`m` 默认值为 47104，矿工会根据每块 GPU 的 SM 数自动选取 `m`（`m = 128 * SM * r`），因此混合 SM 的矿机能让每张显卡各取所需——按 SM 分组各建一个任务（1.4.7 起）。仅在实验时才设置 `FFGP_M`：它对所有设备统一 `m`；`m` 越大算力略高，但会占用更多主机内存。
 Windows：在 `cmd` 窗口中 `set PEARL_SPIN=1`，然后在同一窗口中运行 `start.bat`。
 
 ### 12. 降压 / `--auto-uv`（可选，1.4.0 新增）
@@ -1633,20 +1598,18 @@ Windows：在 `cmd` 窗口中 `set PEARL_SPIN=1`，然后在同一窗口中运�
 
 **它做什么**
 1. 读取显卡当前的 V/F 偏移（HiveOS 超频、你自己的脚本等），并在做任何改动*之前*把它写入恢复文件。
-2. 先让显卡预热 3 分钟，然后以 **15 MHz** 为步长提高偏移。每一步在单独的进程中检查约 30 秒：同一个任务计算数千次，
-   每个结果的每个 tile 逐位比较；比较正常挖矿尝试的命中计数；找到的结果由官方验证器在 CPU 上验证。接近极限时会出现
+2. 先让显卡预热，然后逐步提高偏移。每一步都在满负载下逐位检查，找到的结果由官方验证器在 CPU 上验证。接近极限时会出现
    驱动不报任何错误的错误结果，因此检查同时在 GPU 和 CPU 上进行。
-3. 第一次不一致、CUDA 错误、Xid 错误或卡死就结束爬升。结果为**最后一个正常步长再减一步（15 MHz 余量）**，并用更长的
-   检查（约 2 分钟）确认；确认失败则再降一步。最高尝试到 +495（`--uv-max`，最多 +600；1.5.1 之前为 +300，硬上限 +400）；自 1.6.2 起，未指定 `--uv-max` 时 Turing（RTX 20xx / GTX 16xx）
+3. 第一次出现错误结果、CUDA 错误、Xid 错误或卡死就结束爬升。矿工选取低于极限并留有**安全余量**的值，并用更长的
+   检查确认；确认失败则再降低。最高尝试到 +495（`--uv-max`，最多 +600；1.5.1 之前为 +300，硬上限 +400）；自 1.6.2 起，未指定 `--uv-max` 时 Turing（RTX 20xx / GTX 16xx）
    为 +225，CMP 30HX/40HX 为 +150（CMP 50HX 为 +225）。RTX 40/50 显卡常能稳定在 +450..480。已保存的结果若高于降低后的上限，不会原样使用：显卡在上限处运行
    （先快速检查），已保存的结果保留，待上限再次提高时使用；若已保存的结果*正好*等于旧上限，上限提高后会重新调校。
-4. 结果保存在 `uv.json` 中，以 GPU UUID、驱动版本和内核版本为键。之后启动时，经过快速检查（约 30 秒）后直接应用。
-   如果驱动、内核版本或你的起始偏移发生变化，则重新调校。
-   每次检查在单独的子进程中运行，约需 2.4 GB 内存（`FFGP_UV_CHECK_MB`）：内存较小的矿机上，只有在空闲内存足够时多块显卡的检查才会
-   同时进行，其余的等待（日志中的 `waits for RAM`）并随后进行；所有显卡调校或应用完成后才开始挖矿。挖矿期间的复查会先获得内存，
-   再暂停该显卡（自 1.6.3 起），因此等待内存的显卡会继续挖矿。
-5. 挖矿期间：每 6 小时（`--uv-reval-hours`）重新检查一次（该显卡的挖矿暂停约 30 秒）。如果找到的结果未通过 CPU 验证，
-   或出现一批被拒绝的份额，偏移下调一步（不会低于你自己的值）并保存。**超频重新应用（自 1.6.3 起）：** HiveOS 的 `nvidia-oc`
+4. 结果按显卡、驱动版本和矿工版本保存在 `uv.json` 中。之后启动时，经过快速检查（约 30 秒）后直接应用。
+   如果驱动、矿工版本或你的起始偏移发生变化，则重新调校。
+   检查每块显卡约需 2.4 GB 内存：内存较小的矿机上，部分显卡会排队等待（日志中的 `waits for RAM`）；所有显卡调校或应用完成后才开始挖矿。
+   自 1.6.3 起，等待内存进行复查的显卡会继续挖矿。
+5. 挖矿期间：每 6 小时（`--uv-reval-hours`）重新检查一次（该显卡的挖矿暂停约 30 秒）。如果挖矿期间出现问题（结果未通过 CPU 验证、
+   大量被拒绝的份额），偏移下调一步（不会低于你自己的值）并保存。**超频重新应用（自 1.6.3 起）：** HiveOS 的 `nvidia-oc`
    在每次矿工启动和每次修改超频时写入超频配置中的 *Core Clock* 值，**该字段为空时写入 0**——1.6.3 之前这会让降压失效直到下次重启
    （一台 4× RTX 3070 矿机功耗 604 W 而不是约 440 W）。现在，读回的偏移若为 0、HiveOS 配置值或你自己的起始偏移，就视为超频重新应用：
    auto-uv 在快速检查后重新设置已验证的偏移（该显卡挖矿暂停约 30 秒；失败则与复查一样降一步；每小时最多 4 次），日志
@@ -1656,16 +1619,16 @@ Windows：在 `cmd` 窗口中 `set PEARL_SPIN=1`，然后在同一窗口中运�
    （1.6.1 之前 HiveOS 的 `miner stop` 可能只恢复 GPU0）。如果矿工被强制终止（`kill -9`、崩溃），下次启动会先根据恢复文件
    `uv-restore.json` 恢复你的偏移。重启本身也会重置驱动中的偏移。
 
-只修改 V/F 偏移：锁定频率、功耗上限和显存都不会被改动。只会改动矿工正在挖矿的显卡。NVML 设备编号与 CUDA 编号不同，
-因此每块显卡都通过 PCI 总线地址（和 UUID）匹配；日志中每次改动都会显示总线地址。
+只修改 V/F 偏移：锁定频率、功耗上限和显存都不会被改动。只会改动矿工正在挖矿的显卡。每块显卡都通过 PCI 总线地址匹配；
+日志中每次改动都会显示总线地址。
 
 **要求。** NVIDIA 驱动（NVML 在运行时加载，无需安装任何东西），Linux / HiveOS 上需要 **root**（那里矿工以 root 运行），
 Windows 上需要**管理员权限**。没有 NVML 或权限时，矿工会在日志中说明原因并照常挖矿。**耗时：**首次调校每块显卡约
-**15 分钟**（视步数而定，10-25 分钟；矿机上的各显卡并行调校，完成后才开始挖矿）。之后每次启动增加约 30 秒。
+**15 分钟**（视显卡而定，10-25 分钟；矿机上的各显卡并行调校，完成后才开始挖矿）。之后每次启动增加约 30 秒。
 
 **Windows 分步说明。** 已在 Windows 11、GeForce RTX 3070、驱动 581.80 上验证：驱动允许矿工读取并修改偏移（日志显示
-`allowed -1000..1000`），调校找到 +240（原为 +225，同频下 98.4 W → 86.5 W），保护机制也生效了（一个找到的结果未通过 CPU
-校验 → 退回 +225，该卡 auto-uv 暂停 24 小时）。
+`allowed -1000..1000`），调校找到 +240（原为 +225，同频下 98.4 W → 86.5 W），保护机制也生效了（出错后退回 +225，
+该卡 auto-uv 暂停 24 小时）。
 1. **管理员。** 右键 `.bat` →*以管理员身份运行*。开机自启时，在计划任务中勾选*使用最高权限运行*。没有权限时日志会说明
    无法修改偏移，矿工照常挖矿。
 2. **锁定核心频率**（第 7 节）：在 `start.bat` 中 `set "LOCK_CCLOCK=1560"`（一个值，或按显卡用逗号分隔），或在
@@ -1685,16 +1648,16 @@ Windows 上需要**管理员权限**。没有 NVML 或权限时，矿工会在�
    新驱动或新的矿工内核会自动触发重新调校。
 7. **查看结果：**`findstr auto-uv logs\*.log`（`start-nvidia-smi.bat` 为 `logs\ffgp.log`）。那块 RTX 3070 的示例：
 ```
-auto-uv: GPU0 (bus 04, RTX 3070): CUDA device 0 -> NVML index 0, PCI 0000:04:00.0, ..., current offset +225 (allowed -1000..1000)
-auto-uv: GPU0 (bus 04, RTX 3070) step +255: ok (6560 reruns, cpu ok 6), 94.0 W, 1560 MHz, 58 C
-auto-uv: GPU0 (bus 04, RTX 3070) step +270: FAILED (rerun_diff: 256 transcript word(s) differ between reruns of seed 3 ...)
+auto-uv: GPU0 (bus 04, RTX 3070): ..., PCI 0000:04:00.0, current offset +225 (allowed -1000..1000)
+auto-uv: GPU0 (bus 04, RTX 3070) step +255: ok (...), 94.0 W, 1560 MHz, 58 C
+auto-uv: GPU0 (bus 04, RTX 3070) step +270: FAILED (...)
 auto-uv: GPU0 (bus 04, RTX 3070) offset +225 -> +240, 98.4 W -> 86.5 W, saved
 ```
    * `auto-uv paused for this GPU for 24 h`：显卡在找到的偏移上出错；它以你自己的偏移挖矿，24 小时后（或 `--uv-reset` 后）再次调校。
    * `start offset ... leaves no room below the cap`：你的偏移已等于或高于 `UV_MAX`（或括号中显示的显卡默认上限）；如确定显卡能承受更多，请提高 `UV_MAX`。
    * `no safe offset above ... was found`：显卡承受不了比你的值更高的偏移；不做任何修改。
 8. **如果电脑卡死或驱动重置**（黑屏、“显示驱动程序已停止响应”）：重启后再次启动矿工——它会先从 `uv-restore.json`
-   恢复你的偏移。如果矿工本身在调校某一步时崩溃（窗口显示 `Miner exited (code -1073741819)`），下次启动会把这一步视为失败，只在其下方调校（自 1.5.2 起；之前会重新开始整个搜索并在同一步再次崩溃）。自 1.5.3 起还会跳过已经通过的步骤：预热后直接进行确认（约 5 分钟，而不是完整搜索）。如果某块卡反复出错，请降低 `UV_MAX` 或不要开启 `AUTO_UV`。
+   恢复你的偏移。如果矿工本身在调校某一步时崩溃（窗口显示 `Miner exited (code -1073741819)`），下次启动会记住该偏移为失败，并保持在其下方（自 1.5.2 起；之前可能在同一处再次崩溃）。自 1.5.3 起还会保留已有的进度，因此下次启动约 5 分钟，而不是完整搜索。如果某块卡反复出错，请降低 `UV_MAX` 或不要开启 `AUTO_UV`。
 
 **Windows 现成组合。** 右键 `start.bat` →*编辑*，删除 `set "AUTO_UV=1"` 前面的 `rem`，填写下面的字段，保存，并**以管理员身份**运行。
 留空的字段使用默认值。数值为起始值，取自第 7 节的表格。
@@ -1744,7 +1707,7 @@ set "UV_MAX=495"
 | `--uv-max N` | 调校尝试的最高偏移（最多 600；默认按显卡：RTX 20xx / GTX 16xx / CMP 50HX 225，CMP 30HX/40HX 150，其他 495；Windows：在 `start.bat` 中 `set "UV_MAX=480"`） |
 | `--uv-min N` | 调校的起始偏移，且不会低于该值（默认：HiveOS/驱动中的偏移，否则 120；RTX 40 至少 200，RTX 50 至少 300） |
 | `--uv-step N` | 每步调校的 MHz（默认 15） |
-| `--uv-keep-last` | 某一步失败后保留最后一个通过的步（默认：最后通过的步再减一步） |
+| `--uv-keep-last` | 保留通过检查的最高偏移，不留额外的安全余量 |
 | `--uv-reval-hours H` | 挖矿期间的复查间隔（默认 6，`0` 表示不复查） |
 | `--uv-dir DIR` | `uv.json` 和 `uv-restore.json` 的存放位置（也可用 `FFGP_STATE_DIR`） |
 | `--auto-uv-dry-run` | 只在日志中说明会改动哪些显卡（CUDA 设备 → NVML 设备、总线地址），不做任何改动 |
@@ -1762,10 +1725,10 @@ set "UV_MAX=495"
 
 **日志行**（都以 `auto-uv:` 开头，`grep auto-uv` 即可看到全过程）：
 ```
-auto-uv: GPU0 (bus 0d, RTX 3070): CUDA device 0 -> NVML index 1, PCI 0000:0D:00.0, GPU-0d06..., current offset +150
+auto-uv: GPU0 (bus 0d, RTX 3070): ..., PCI 0000:0D:00.0, current offset +150
 auto-uv: GPU0 (bus 0d, RTX 3070): range +150..+495 (max: default; start: current offset)
-auto-uv: GPU0 (bus 0d, RTX 3070) step +195: ok (1952 reruns, cpu ok 6), 110.4 W, 1560 MHz, 53 C
-auto-uv: GPU0 (bus 0d, RTX 3070) step +225: FAILED (rerun_diff: ...)
+auto-uv: GPU0 (bus 0d, RTX 3070) step +195: ok (...), 110.4 W, 1560 MHz, 53 C
+auto-uv: GPU0 (bus 0d, RTX 3070) step +225: FAILED (...)
 auto-uv: GPU0 (bus 0d, RTX 3070) offset +150 -> +195, 116.6 W -> 106.6 W, saved
 auto-uv: GPU0 (bus 0d, RTX 3070) offset +195 -> +150 restored
 ```
@@ -1786,9 +1749,8 @@ auto-uv: GPU0 (bus 0d, RTX 3070) offset +195 -> +150 restored
 ### 13. Common Foundry (CMFD)，1.6.0 新增
 
 同一个程序也可以挖 **Common Foundry（CMFD，ForgeMatrix V4）**。CMFD 的计算由 **FreeForgeMiner** 引擎完成
-（MIT 许可，<https://github.com/pepsykolya/freeforgeminer>，1.2.4 版），放在软件包的 `cmfd/` 文件夹中：Windows 使用原版发布文件；Linux/HiveOS 使用在 Ubuntu 20.04 上由同一固定源码编译的
-文件，可在所有 HiveOS（Ubuntu 20.04 和 22.04 镜像）上运行。
-FreeForGemPear 负责准备模型、为每块 GPU 启动一个引擎进程、应用您的频率设置、打印常规统计行，并在引擎退出时重新启动。
+（MIT 许可，<https://github.com/pepsykolya/freeforgeminer>，1.2.4 版），放在软件包的 `cmfd` 文件夹中；Linux/HiveOS 软件包可在所有 HiveOS（Ubuntu 20.04 和 22.04 镜像）上运行。
+FreeForGemPear 负责准备模型、在每块 GPU 上运行引擎、应用您的频率设置、打印常规统计行，并在引擎退出时重新启动。
 
 **币种由矿池地址决定**：`cmfd+tls://` 地址即为 CMFD（`--algo cmfd|pearl` 可强制指定）。钱包为您的 CMFD 地址，两种形式均可：`cmfd1...`（63 个字符，带校验和，Common Foundry 1.0.16+ 钱包显示的格式）
 或旧的 64 位十六进制——它们是同一个密钥。`cmfd1...` 地址会被校验（输错会在开始挖矿前被拒绝），并以十六进制发送给矿池。
@@ -1819,8 +1781,8 @@ HiveOS 上默认 `/hive/miners/custom/cmfd-model`（与 FreeForgeMiner 共用，
 # Midas Mining：
 ./freeforgempear --pool 'cmfd+tls://24.107.152.151:29745?pin=2ee4e6a028b07b300753dff3c260b79763c5e748d4e78b86cf3855e97eb2e80e' \
     --wallet cmfd1您的地址 --worker rig1
-./freeforgempear --algo cmfd --self-test        # GPU 自检（无需矿池）：与参考路径逐位比较；若已有模型，
-                                                # 还会运行 Common Foundry 1.0.16 官方测试向量（32 个 nonce，SHA-256）
+./freeforgempear --algo cmfd --self-test        # GPU 自检（无需矿池）；若已有模型，
+                                                # 还会运行 Common Foundry 1.0.16 官方测试向量
 ```
 在 shell 中请给地址加引号（`?` 是通配符）。如需由矿工自动清除降压偏移（见下文），请以 root 运行。
 
@@ -1847,18 +1809,15 @@ HiveOS 按卡显示 FW/s；矿机首次启动会下载模型（请查看矿工�
 `--uv-offset N` 则设置为 N —— **风险自负**。在 **AMD Radeon** 上 `--auto-uv` 通过 amduv 为 CMFD 调校降压（第 14 节，自 1.6.3 起）；NVIDIA 见下文。安全的做法：默认频率、功耗限制或锁定核心频率（`--lock-cclock`）。
 
 **CMFD 的 `--auto-uv`（NVIDIA）。** 使用 `--auto-uv`（HiveOS：*Extra config arguments*；Windows：`start-cmfd.bat` 中
-`AUTO_UV=1`，以管理员身份运行）时，矿工会**专门为 CMFD** 寻找降压偏移，与 Pearl 的结果分开保存。模型准备好之后、引擎启动之前，
-对每张卡：引擎自带的 GPU 工作进程（`cmfd-v4-replay`，未修改）只加载一次模型，反复运行两批固定输入；在基准偏移（0，默认）下
-记录其最终摘要作为参考，并运行 Common Foundry 1.0.16 官方测试向量；然后核心偏移以 `--uv-step`（15 MHz）为步长，从 `--uv-min`
-（默认：0 之上一步）升到 `--uv-max`（默认：第 12 节的每卡上限：495，RTX 20xx / CMP 50HX 225，CMP 30HX/40HX 150）；每一步
-运行 30 秒 + 10 秒测量，**每个摘要都必须与参考逐位一致**。第一个失败的步长即为边界；结果取低一步（`--uv-keep-last` 保留最后
-成功的一步），再做 2 分钟确认 + 测试向量（失败则再降一步）。结果保存在 `uv.json`（`cmfd` 部分，按显卡 UUID，含驱动与引擎/工作进程
-标识），之后的启动直接应用（若上次验证早于 `--uv-reval-hours`，先做 30 秒检查）。挖矿期间，已调优显卡上出现引擎
+`AUTO_UV=1`，以管理员身份运行）时，矿工会**专门为 CMFD** 寻找降压偏移，与 Pearl 的结果分开保存，在模型准备好之后、引擎启动之前进行。
+每一步都在真实模型上逐位检查，并运行 Common Foundry 1.0.16 官方测试向量；结果留有安全余量（`--uv-keep-last` 去掉余量）。
+范围为 `--uv-min` / `--uv-max`（默认：第 12 节的每卡上限：495，RTX 20xx / CMP 50HX 225，CMP 30HX/40HX 150）。
+结果保存在 `uv.json`（`cmfd` 部分，按显卡、驱动和引擎版本），之后的启动直接应用（若上次验证早于 `--uv-reval-hours`，先做简短检查）。挖矿期间，已调优显卡上出现引擎
 `INTEGRITY | ERROR` 或 CUDA 故障时，偏移退一步（并保存）并重启引擎。退出时恢复您原来的偏移（崩溃后在下次启动时恢复）。
-若无法检查（没有模型、缺少工作进程、基准偏移下失败），该卡以 0 偏移挖矿并给出 WARNING。日志：`grep "auto-uv (cmfd)"`。
-实测（Aria，统计行平均）：功耗限制 135 W 的 RTX 3070 在约 1050 MHz 处受功耗限制，电压已在曲线底部：边界 +225，结果 +195，
-没有收益（135 W 下 13.84 → 13.97 FW/s）。同一张卡在 220 W：默认 19.5 FW/s、214 W（328 k FW/kWh）→ +135（边界 +165）
-20.4–20.5 FW/s、213–216 W（342–345 k，**+4–5 %**）。CMP 50HX（功耗限制 225 W，核心锁定 1410 MHz）：到 +225 上限都未出错；
+若无法检查（没有模型、缺少引擎文件、默认设置下失败），该卡以 0 偏移挖矿并给出 WARNING。所有显卡同时调校。日志：`grep "auto-uv (cmfd)"`。
+实测（Aria，统计行平均）：功耗限制 135 W 的 RTX 3070 在约 1050 MHz 处受功耗限制，电压已在曲线底部：结果 +195，
+没有收益（135 W 下 13.84 → 13.97 FW/s）。同一张卡在 220 W：默认 19.5 FW/s、214 W（328 k FW/kWh）→ +135
+20.4–20.5 FW/s、213–216 W（342–345 k，**+4–5 %**）。CMP 50HX（功耗限制 225 W，核心锁定 1410 MHz）：能稳定在 +225 上限；
 13.10 FW/s、216 W → 13.21、196 W（**+11 %**），13.01、217 W → 13.17、203 W（**+8 %**）。**边界取决于工作点**：功耗限制变化
 超过 3 % 或 `--lock-cclock` 改变时会重新调优；在超频配置（HiveOS、nvidia-smi）中更改核心频率锁定后，请用 `--uv-reset` 运行一次。
 
@@ -1888,11 +1847,11 @@ downloads.commonfoundry.ai 和 github.com 以及磁盘空间；矿池不接受�
 
 ### 14. AMD Radeon（Windows），1.6.0 新增
 
-Windows 软件包也可以在 **AMD Radeon** 显卡上挖矿，使用自有的 OpenCL 内核（`pearlgpu_amd.dll`，与 CUDA 内核一样闭源）。
+Windows 软件包也可以在 **AMD Radeon** 显卡上挖矿，（OpenCL）。
 同一个程序、同样的启动文件、同样的日志；矿工自动选择 GPU 库：
 
 * `--backend auto`（默认）：如果 CUDA 库能看到 NVIDIA 显卡就用 CUDA，否则用 AMD 库。`--backend amd` / `--backend cuda`
-  （或 `FFGP_BACKEND`）可强制指定。日志中显示所选结果：`1 GPU(s) [amd]` 和 `[pearlgpu-amd] gfx1030: amd-a0 udot4 k8192`。
+  （或 `FFGP_BACKEND`）可强制指定。日志中显示所选结果：`1 GPU(s) [amd]` 和 `[pearlgpu-amd] gfx1030: ...`。
 * 只使用**独立** Radeon 显卡；Ryzen 处理器的集成显卡 “AMD Radeon(TM) Graphics” 会被跳过。
 * 一个进程只驱动一种厂商的显卡：同时有 NVIDIA 和 AMD 显卡的电脑请运行两个矿工（`--backend cuda` 和 `--backend amd`）。
 
@@ -1911,35 +1870,33 @@ Windows 软件包也可以在 **AMD Radeon** 显卡上挖矿，使用自有的 O
 
 统计行中的**功耗**来自驱动（ADLX，芯片功耗，只读）。在多块 AMD 显卡的矿机上，单卡功耗可能在显卡之间对调（整机总和正确）。
 
-**AMD 上的降压（`--auto-uv`）** 与 NVIDIA 不同：矿工启动同目录下的 `amduv.exe` 工具，它在最低核心电压下调出核心频率上限
-（每个点都在 GPU 和 CPU 上逐位校验），每块卡 / 驱动 / AMD 库版本只做一次（约 10–15 分钟），之后每次启动直接应用结果。独立的守护进程
+**AMD 上的降压（`--auto-uv`）** 与 NVIDIA 不同：矿工启动同目录下的 `amduv.exe` 工具，它调校频率和电压以获得最佳每瓦算力
+（每个点都在 GPU 和 CPU 上逐位校验），每块卡 / 驱动 / 矿工版本只做一次（约 10–15 分钟），之后每次启动直接应用结果。独立的守护进程
 在矿工退出时（包括崩溃或被强制结束）**恢复您自己的频率 / 电压 / 功耗限制设置**。请以管理员身份运行。我们的 RX 6800 XT：约
 30–32 TH/s @ 160–172 W，而默认为 34 TH/s @ ~260 W（TH/W 提高约 40 %）。`$FFGP_AMD_UV_GOAL=max` 保留更多速度；`--uv-reset`
 清除结果。`--uv-offset`、`--lock-cclock`、`--lock-mclock` 和 `--moffset` 仅适用于 NVIDIA（AMD 下矿工会拒绝）。
 
-**AMD 上的 CMFD：** `start-cmfd.bat` / `--pool cmfd+tls://…` 用法相同；软件包运行自带的 OpenCL 工作进程
-`cmfd\cmfd-v4-replay-ocl.exe` 和矿池客户端 `cmfd\cmfd-miner-ffgp.exe`（用 `cmfd/patches/` 中的小补丁重新编译的
-FreeForgeMiner，无需 nvidia-smi）。需要约 7 GB 空闲显存。RX 6800 XT：约 10 FW/s @ ~275 W（RTX 3070 约 20 FW/s）：CMFD 在
+**AMD 上的 CMFD：** `start-cmfd.bat` / `--pool cmfd+tls://…` 用法相同；软件包从其 `cmfd` 文件夹运行 AMD 版的
+FreeForgeMiner 引擎。需要约 7 GB 空闲显存。RX 6800 XT：约 10 FW/s @ ~275 W（RTX 3070 约 20 FW/s）：CMFD 在
 NVIDIA 张量核心上效率高得多。
 
 **AMD 上 CMFD 的降压（自 1.6.3 起）：**删除 `start-cmfd.bat` 中 `set "AUTO_UV=1"` 前面的 `rem`（以管理员身份运行），或在 CMFD
 命令行中加入 `--auto-uv`。`amduv.exe` 为 CMFD 保存**单独的结果**：在 Pearl 仍正常的频率下 CMFD 就会算错（RX 6800 XT 最低电压下：
-Pearl 到 2250 MHz 都通过，CMFD 从 2200–2250 起出错），因此 CMFD 从不使用 Pearl 的点。每个点都在真实模型上检查：OpenCL 工作进程
-反复计算固定的 32 个 nonce 批次，其最终摘要（覆盖全部 384 层的 BLAKE3）必须与默认设置下取得的摘要逐位一致——任何位置错一位都会改变摘要。
-首次启动进行调校（约 15–20 分钟，每块卡 / 驱动 / 工作进程 / 模型只做一次），之后启动直接应用保存的点（上次检查超过 6 小时则做 15 秒检查）。
+Pearl 到 2250 MHz 都通过，CMFD 从 2200–2250 起出错），因此 CMFD 从不使用 Pearl 的点。每个点都在真实模型上与默认设置下的结果逐位比对。
+首次启动进行调校（约 15–20 分钟，每块卡 / 驱动 / 引擎 / 模型只做一次），之后启动直接应用保存的点（上次检查超过 6 小时则做简短检查）。
 守护进程在矿工退出时（包括崩溃或被强制结束）**恢复您自己的频率 / 电压 / 功耗限制设置**。`start-cmfd.bat` 中的 `UV_GOAL`
 （`$FFGP_AMD_UV_GOAL`）选择调校出的配置之一：
 
-| 配置 | 如何得到 | RX 6800 XT（芯片功耗，ADLX） |
+| 配置 | 目标 | RX 6800 XT（芯片功耗，ADLX） |
 |---|---|---|
 | —（默认设置） | | 10.0 FW/s @ 280 W（36 FW/kJ） |
-| `eff` | 最低电压，提高频率上限直到检查失败，退回一步 | 2100 MHz / 881 mV：9.1 FW/s @ 193 W（47 FW/kJ，**+32 %**；FW/s −9 %） |
+| `eff` | 每瓦 FW 最高 | 2100 MHz / 881 mV：9.1 FW/s @ 193 W（47 FW/kJ，**+32 %**；FW/s −9 %） |
 | `bal`（默认） | 在保留 ≥ 90 % 默认 FW/s 的前提下每瓦 FW 最高 | 在这块卡上 = `eff` |
-| `max` | 您的最高频率，降低电压直到检查失败，再升回一步 | 2324 MHz / 1075 mV：10.1 FW/s @ 248 W（41 FW/kJ，+14 %；速度不变） |
+| `max` | 默认速度、更低电压 | 2324 MHz / 1075 mV：10.1 FW/s @ 248 W（41 FW/kJ，+14 %；速度不变） |
 
 通过矿工在 Aria 矿池上（各 10–15 分钟，统计行平均值）：默认 9.9 FW/s @ 277 W，`bal` 9.1 FW/s @ 191 W（FW/W +33 %），
-`max` 10.0 FW/s @ 247 W（+14 %）；没有被拒份额，引擎 `INTEGRITY | ok`。边界每次运行略有浮动（881 mV 下 2200 MHz 两次通过、一次失败），
-因此调校器总是留出一步余量。
+`max` 10.0 FW/s @ 247 W（+14 %）；没有被拒份额，引擎 `INTEGRITY | ok`。极限每次运行略有浮动，
+因此调校器总是留出安全余量。
 
 在 Windows 上无用：功耗限制最多只能降到 −6 %（264 W，FW/W +4 %）；显存频率只能提高（2000–2150 MHz：没有提升，且 2150 时结果错误），
 快速显存时序没有变化。`--uv-reset` 清除 Pearl 和 CMFD 的结果（下次 `--auto-uv` 启动重新调校）。
